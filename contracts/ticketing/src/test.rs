@@ -436,3 +436,26 @@ fn list_for_resale_rejects_a_zero_price() {
     let result = client.try_list_for_resale(&owner, &ticket_id, &0i128);
     assert_eq!(result, Err(Ok(Error::InvalidPrice)));
 }
+
+#[test]
+fn cancel_resale_returns_a_ticket_to_valid() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    client.list_for_resale(&owner, &ticket_id, &1_100i128);
+    assert_eq!(client.verify_ticket(&ticket_id).status, TicketStatus::Resale);
+
+    client.cancel_resale(&owner, &ticket_id);
+    let ticket = client.verify_ticket(&ticket_id);
+    assert_eq!(ticket.status, TicketStatus::Valid);
+    assert_eq!(ticket.resale_price, 0);
+}
