@@ -325,3 +325,21 @@ fn revoke_rejects_the_wrong_organizer() {
     let result = client.try_revoke_ticket(&impostor, &ticket_id);
     assert_eq!(result, Err(Ok(Error::NotOrganizer)));
 }
+
+#[test]
+fn get_event_reports_not_found_for_an_unknown_id() {
+    let (_env, client, _token, _token_asset, _admin, _organizer) = setup();
+    match client.try_get_event(&999) {
+        Err(Ok(Error::EventNotFound)) => {}
+        other => panic!("expected EventNotFound, got {other:?}"),
+    }
+}
+
+#[test]
+fn get_ticket_reports_not_found_for_an_unknown_id() {
+    let (_env, client, _token, _token_asset, _admin, _organizer) = setup();
+    match client.try_get_ticket(&999) {
+        Err(Ok(Error::TicketNotFound)) => {}
+        other => panic!("expected TicketNotFound, got {other:?}"),
+    }
+}
