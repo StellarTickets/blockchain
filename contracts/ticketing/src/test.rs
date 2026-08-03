@@ -551,3 +551,34 @@ fn revoke_permanently_blocks_resale_actions() {
     let list_result = client.try_list_for_resale(&owner, &ticket_id, &1_000i128);
     assert_eq!(list_result, Err(Ok(Error::Revoked)));
 }
+
+#[test]
+fn buy_resale_with_zero_royalty_pays_the_seller_in_full() {
+    let (env, client, token, token_asset, _admin, organizer) = setup();
+    client.create_event(
+        &organizer,
+        &1,
+        &String::from_str(&env, "Community Meetup"),
+        &String::from_str(&env, "corporate_events"),
+        &15_000u32,
+        &0u32, // no royalty
+    );
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &seller,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+    client.list_for_resale(&seller, &ticket_id, &1_200i128);
+    token_asset.mint(&buyer, &5_000i128);
+
+    client.buy_resale(&buyer, &ticket_id);
+
+    assert_eq!(token.balance(&organizer), 0);
+    assert_eq!(token.balance(&seller), 1_200);
+}
