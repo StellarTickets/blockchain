@@ -384,3 +384,17 @@ fn issue_ticket_rejects_a_negative_price() {
     );
     assert_eq!(result, Err(Ok(Error::InvalidPrice)));
 }
+
+#[test]
+fn create_event_rejects_a_royalty_above_10_000_bps() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    let result = client.try_create_event(
+        &organizer,
+        &1,
+        &String::from_str(&env, "Radiohead Live"),
+        &String::from_str(&env, "concert"),
+        &12_000u32,
+        &10_001u32,
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidRoyalty)));
+}
