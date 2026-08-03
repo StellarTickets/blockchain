@@ -343,3 +343,19 @@ fn get_ticket_reports_not_found_for_an_unknown_id() {
         other => panic!("expected TicketNotFound, got {other:?}"),
     }
 }
+
+#[test]
+fn create_event_rejects_a_duplicate_event_id() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    let result = client.try_create_event(
+        &organizer,
+        &1,
+        &String::from_str(&env, "Another Show"),
+        &String::from_str(&env, "concert"),
+        &12_000u32,
+        &500u32,
+    );
+    assert_eq!(result, Err(Ok(Error::EventAlreadyExists)));
+}
