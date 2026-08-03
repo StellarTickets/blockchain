@@ -489,3 +489,27 @@ fn organizer_can_run_multiple_independent_events() {
     assert_eq!(client.verify_ticket(&ticket_a).event_id, 1);
     assert_eq!(client.verify_ticket(&ticket_b).event_id, 2);
 }
+
+#[test]
+fn transferring_a_resale_listed_ticket_clears_the_listing_state() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let friend = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    client.list_for_resale(&owner, &ticket_id, &1_100i128);
+    client.transfer_ticket(&owner, &ticket_id, &friend);
+
+    let ticket = client.verify_ticket(&ticket_id);
+    assert_eq!(ticket.owner, friend);
+    assert_eq!(ticket.status, TicketStatus::Valid);
+    assert_eq!(ticket.resale_price, 0);
+}
