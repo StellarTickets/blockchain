@@ -386,6 +386,26 @@ fn issue_ticket_rejects_a_negative_price() {
 }
 
 #[test]
+fn issue_ticket_allows_a_zero_price_comp_ticket() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let vip_guest = Address::generate(&env);
+
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &vip_guest,
+        &String::from_str(&env, "Comp"),
+        &String::from_str(&env, "unassigned"),
+        &0i128,
+    );
+
+    let ticket = client.verify_ticket(&ticket_id);
+    assert_eq!(ticket.original_price, 0);
+    assert_eq!(ticket.status, TicketStatus::Valid);
+}
+
+#[test]
 fn create_event_rejects_a_royalty_above_10_000_bps() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
     let result = client.try_create_event(
