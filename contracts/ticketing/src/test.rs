@@ -634,3 +634,23 @@ fn seat_and_tier_survive_a_transfer() {
     assert_eq!(ticket.tier, String::from_str(&env, "VIP"));
     assert_eq!(ticket.seat, String::from_str(&env, "A1"));
 }
+
+#[test]
+fn purchase_primary_allows_a_free_event() {
+    let (env, client, token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+
+    let ticket_id = client.purchase_primary(
+        &buyer,
+        &1,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &0i128,
+    );
+
+    assert_eq!(token.balance(&organizer), 0);
+    let ticket = client.verify_ticket(&ticket_id);
+    assert_eq!(ticket.owner, buyer);
+    assert_eq!(ticket.original_price, 0);
+}
