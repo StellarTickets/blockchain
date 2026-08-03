@@ -1,5 +1,8 @@
 # StellarTickets — Blockchain
 
+[![CI](https://github.com/StellarTickets/blockchain/actions/workflows/ci.yml/badge.svg)](https://github.com/StellarTickets/blockchain/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Soroban smart contracts powering [StellarTickets](https://github.com/StellarTickets) —
 *Secure. Verifiable. Powered by Stellar.*
 
