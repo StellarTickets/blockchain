@@ -459,3 +459,33 @@ fn cancel_resale_returns_a_ticket_to_valid() {
     assert_eq!(ticket.status, TicketStatus::Valid);
     assert_eq!(ticket.resale_price, 0);
 }
+
+#[test]
+fn organizer_can_run_multiple_independent_events() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    make_event(&env, &client, &organizer, 2);
+
+    let buyer = Address::generate(&env);
+    let ticket_a = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+    let ticket_b = client.issue_ticket(
+        &organizer,
+        &2,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &2_000i128,
+    );
+
+    assert_eq!(client.get_event(&1).tickets_issued, 1);
+    assert_eq!(client.get_event(&2).tickets_issued, 1);
+    assert_eq!(client.verify_ticket(&ticket_a).event_id, 1);
+    assert_eq!(client.verify_ticket(&ticket_b).event_id, 2);
+}
