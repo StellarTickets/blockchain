@@ -95,3 +95,8 @@ stellar contract invoke \
 ├── Cargo.toml               # workspace
 └── README.md
 ```
+
+## More documentation
+
+See [`docs/`](docs/README.md) for architecture, testing, deployment,
+and FAQ.
