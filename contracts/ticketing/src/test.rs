@@ -531,3 +531,23 @@ fn purchase_primary_increments_tickets_issued() {
 
     assert_eq!(client.get_event(&1).tickets_issued, 1);
 }
+
+#[test]
+fn revoke_permanently_blocks_resale_actions() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    client.revoke_ticket(&organizer, &ticket_id);
+
+    let list_result = client.try_list_for_resale(&owner, &ticket_id, &1_000i128);
+    assert_eq!(list_result, Err(Ok(Error::Revoked)));
+}
