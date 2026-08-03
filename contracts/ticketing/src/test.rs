@@ -367,3 +367,20 @@ fn initialize_rejects_a_second_call() {
     let result = client.try_initialize(&admin, &other_token);
     assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
 }
+
+#[test]
+fn issue_ticket_rejects_a_negative_price() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+
+    let result = client.try_issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &-1i128,
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidPrice)));
+}
