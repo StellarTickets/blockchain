@@ -452,7 +452,10 @@ fn cancel_resale_returns_a_ticket_to_valid() {
     );
 
     client.list_for_resale(&owner, &ticket_id, &1_100i128);
-    assert_eq!(client.verify_ticket(&ticket_id).status, TicketStatus::Resale);
+    assert_eq!(
+        client.verify_ticket(&ticket_id).status,
+        TicketStatus::Resale
+    );
 
     client.cancel_resale(&owner, &ticket_id);
     let ticket = client.verify_ticket(&ticket_id);
