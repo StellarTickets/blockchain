@@ -513,3 +513,21 @@ fn transferring_a_resale_listed_ticket_clears_the_listing_state() {
     assert_eq!(ticket.status, TicketStatus::Valid);
     assert_eq!(ticket.resale_price, 0);
 }
+
+#[test]
+fn purchase_primary_increments_tickets_issued() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+    token_asset.mint(&buyer, &5_000i128);
+
+    client.purchase_primary(
+        &buyer,
+        &1,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    assert_eq!(client.get_event(&1).tickets_issued, 1);
+}
