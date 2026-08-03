@@ -62,6 +62,26 @@ stellar contract deploy \
   --network testnet
 ```
 
+## Testnet setup
+
+```bash
+# create and fund a testnet identity
+stellar keys generate organizer --network testnet --fund
+
+# deploy the contract
+stellar contract deploy \
+  --wasm target/wasm32v1-none/release/stellar_tickets_ticketing.wasm \
+  --source organizer \
+  --network testnet
+
+# initialize it against a testnet SEP-41 token
+stellar contract invoke \
+  --id <contract-id> \
+  --source organizer \
+  --network testnet \
+  -- initialize --admin <admin-address> --payment_token <token-contract-id>
+```
+
 ## Project structure
 
 ```text
