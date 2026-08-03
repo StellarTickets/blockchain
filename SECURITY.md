@@ -12,3 +12,9 @@ through the StellarTickets GitHub organization.
 
 This contract has not had a third-party audit yet. Treat it as
 testnet-only until one has been completed.
+
+## Supported versions
+
+| Version | Supported |
+|---|---|
+| 0.1.x | :white_check_mark: (testnet only) |
