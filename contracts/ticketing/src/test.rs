@@ -306,3 +306,22 @@ fn check_in_rejects_the_wrong_organizer() {
     let result = client.try_check_in(&impostor, &ticket_id);
     assert_eq!(result, Err(Ok(Error::NotOrganizer)));
 }
+
+#[test]
+fn revoke_rejects_the_wrong_organizer() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let impostor = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    let result = client.try_revoke_ticket(&impostor, &ticket_id);
+    assert_eq!(result, Err(Ok(Error::NotOrganizer)));
+}
