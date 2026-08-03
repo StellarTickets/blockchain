@@ -582,3 +582,33 @@ fn buy_resale_with_zero_royalty_pays_the_seller_in_full() {
     assert_eq!(token.balance(&organizer), 0);
     assert_eq!(token.balance(&seller), 1_200);
 }
+
+#[test]
+fn resale_price_exactly_at_the_face_value_cap_is_allowed() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    client.create_event(
+        &organizer,
+        &1,
+        &String::from_str(&env, "University Lecture"),
+        &String::from_str(&env, "universities"),
+        &10_000u32, // no markup allowed at all
+        &0u32,
+    );
+    let owner = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    // Exactly face value should be allowed even with a 100% (no markup) cap.
+    client.list_for_resale(&owner, &ticket_id, &1_000i128);
+    assert_eq!(client.verify_ticket(&ticket_id).resale_price, 1_000);
+
+    // One unit above face value must still be rejected under the same cap.
+    let over = client.try_list_for_resale(&owner, &ticket_id, &1_001i128);
+    assert_eq!(over, Err(Ok(Error::ResalePriceExceedsCap)));
+}
