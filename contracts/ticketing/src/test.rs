@@ -612,3 +612,25 @@ fn resale_price_exactly_at_the_face_value_cap_is_allowed() {
     let over = client.try_list_for_resale(&owner, &ticket_id, &1_001i128);
     assert_eq!(over, Err(Ok(Error::ResalePriceExceedsCap)));
 }
+
+#[test]
+fn seat_and_tier_survive_a_transfer() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let friend = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "VIP"),
+        &String::from_str(&env, "A1"),
+        &1_000i128,
+    );
+
+    client.transfer_ticket(&owner, &ticket_id, &friend);
+
+    let ticket = client.verify_ticket(&ticket_id);
+    assert_eq!(ticket.tier, String::from_str(&env, "VIP"));
+    assert_eq!(ticket.seat, String::from_str(&env, "A1"));
+}
