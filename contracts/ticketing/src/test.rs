@@ -359,3 +359,11 @@ fn create_event_rejects_a_duplicate_event_id() {
     );
     assert_eq!(result, Err(Ok(Error::EventAlreadyExists)));
 }
+
+#[test]
+fn initialize_rejects_a_second_call() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let other_token = Address::generate(&env);
+    let result = client.try_initialize(&admin, &other_token);
+    assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
+}
