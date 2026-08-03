@@ -248,3 +248,22 @@ fn cancel_resale_rejects_a_ticket_that_is_not_listed() {
     let result = client.try_cancel_resale(&owner, &ticket_id);
     assert_eq!(result, Err(Ok(Error::NotForResale)));
 }
+
+#[test]
+fn list_for_resale_rejects_a_non_owner() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    let result = client.try_list_for_resale(&impostor, &ticket_id, &1_000i128);
+    assert_eq!(result, Err(Ok(Error::NotOwner)));
+}
