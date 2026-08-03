@@ -267,3 +267,23 @@ fn list_for_resale_rejects_a_non_owner() {
     let result = client.try_list_for_resale(&impostor, &ticket_id, &1_000i128);
     assert_eq!(result, Err(Ok(Error::NotOwner)));
 }
+
+#[test]
+fn buy_resale_rejects_a_ticket_that_is_not_listed() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    token_asset.mint(&buyer, &10_000i128);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    let result = client.try_buy_resale(&buyer, &ticket_id);
+    assert_eq!(result, Err(Ok(Error::NotForResale)));
+}
