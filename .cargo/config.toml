@@ -1,0 +1,5 @@
+[build]
+target-dir = "target"
+
+[alias]
+xtest = "test -p stellar-tickets-ticketing"
