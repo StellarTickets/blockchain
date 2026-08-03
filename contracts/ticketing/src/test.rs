@@ -398,3 +398,21 @@ fn create_event_rejects_a_royalty_above_10_000_bps() {
     );
     assert_eq!(result, Err(Ok(Error::InvalidRoyalty)));
 }
+
+#[test]
+fn list_for_resale_rejects_a_zero_price() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &1_000i128,
+    );
+
+    let result = client.try_list_for_resale(&owner, &ticket_id, &0i128);
+    assert_eq!(result, Err(Ok(Error::InvalidPrice)));
+}
