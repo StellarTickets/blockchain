@@ -20,6 +20,17 @@ pub struct TicketCheckedIn {
     pub organizer: Address,
 }
 
+/// Mirrors `TicketCheckedIn`. Revocation is the other terminal state a ticket
+/// can reach; without an event, anything indexing the chain by events rather
+/// than polling storage would still see a revoked ticket as valid.
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct TicketRevoked {
+    #[topic]
+    pub ticket_id: u64,
+    pub organizer: Address,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TicketStatus {
@@ -270,6 +281,11 @@ impl TicketingContract {
         }
         ticket.status = TicketStatus::Revoked;
         Self::save_ticket(&env, ticket_id, &ticket);
+        TicketRevoked {
+            ticket_id,
+            organizer,
+        }
+        .publish(&env);
         Ok(())
     }
 
