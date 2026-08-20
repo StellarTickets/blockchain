@@ -1,0 +1,18 @@
+[package]
+name = "stellar-tickets-ticketing"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Soroban contract for issuing, verifying, transferring, and reselling blockchain tickets"
+repository = "https://github.com/StellarTickets/blockchain"
+license = "MIT"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
