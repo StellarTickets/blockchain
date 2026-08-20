@@ -1,5 +1,4 @@
 {
-    "githubPullRequests.ignoredPullRequestBranches": [
-        "main"
-    ]
+  "rust-analyzer.check.command": "clippy",
+  "editor.formatOnSave": true
 }

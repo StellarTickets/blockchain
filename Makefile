@@ -1,15 +1,13 @@
-.PHONY: build test deploy-testnet deploy-mainnet
-
-build:
-	cd soroban && cargo build --target wasm32-unknown-unknown --release
+.PHONY: test build fmt lint
 
 test:
-	# Pre-build farming-pool WASM; factory tests embed it via farming_pool::WASM.
-	cd soroban && cargo build -p farming-pool --target wasm32v1-none --release
-	cd soroban && cargo test --workspace
+	cargo test --workspace
 
-deploy-testnet:
-	NETWORK=testnet ./scripts/deploy.sh
+build:
+	stellar contract build
 
-deploy-mainnet:
-	NETWORK=mainnet ./scripts/deploy.sh
+fmt:
+	cargo fmt --all
+
+lint:
+	cargo clippy --all-targets -- -D warnings
