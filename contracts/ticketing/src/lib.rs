@@ -20,6 +20,14 @@ pub struct TicketCheckedIn {
     pub organizer: Address,
 }
 
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct TicketRevoked {
+    #[topic]
+    pub ticket_id: u64,
+    pub organizer: Address,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TicketStatus {
@@ -59,7 +67,7 @@ pub struct Ticket {
 }
 
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DataKey {
     Admin,
     PaymentToken,
@@ -72,22 +80,36 @@ pub enum DataKey {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    /// `initialize` was called on a contract that already has an admin set.
     AlreadyInitialized = 1,
+    /// A call that requires `initialize` to have run was made before it was.
     NotInitialized = 2,
+    /// No `Event` is stored under the given `event_id`.
     EventNotFound = 3,
+    /// `create_event` was called with an `event_id` that's already in use.
     EventAlreadyExists = 4,
+    /// No `Ticket` is stored under the given `ticket_id`.
     TicketNotFound = 5,
+    /// Caller is not the organizer of the associated event.
     NotOrganizer = 6,
+    /// Caller does not own the ticket it's trying to act on.
     NotOwner = 7,
+    /// The ticket has already been checked in and can't be used again.
     AlreadyUsed = 8,
+    /// The ticket has been revoked and can no longer be transferred, resold,
+    /// or checked in.
     Revoked = 9,
+    /// The ticket is not currently listed for resale.
     NotForResale = 10,
+    /// The requested resale price exceeds the event's anti-scalping cap.
     ResalePriceExceedsCap = 11,
+    /// A negative (or otherwise invalid) price was supplied.
     InvalidPrice = 12,
+    /// `royalty_bps` is greater than 10,000 (100%).
     InvalidRoyalty = 13,
 }
 
-const LEDGER_BUMP: u32 = 535_679; // ~31 days at 5s/ledger, matches other Soroban tooling defaults
+const LEDGER_BUMP: u32 = 535_680; // ~31 days at 5s/ledger, matches other Soroban tooling defaults
 const LEDGER_THRESHOLD: u32 = 500_000;
 
 #[contract]
@@ -172,6 +194,11 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .set(&DataKey::Event(event_id), &event);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Event(event_id),
+            LEDGER_THRESHOLD,
+            LEDGER_BUMP,
+        );
         Ok(ticket_id)
     }
 
@@ -199,6 +226,11 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .set(&DataKey::Event(event_id), &event);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Event(event_id),
+            LEDGER_THRESHOLD,
+            LEDGER_BUMP,
+        );
         Ok(ticket_id)
     }
 
@@ -270,6 +302,11 @@ impl TicketingContract {
         }
         ticket.status = TicketStatus::Revoked;
         Self::save_ticket(&env, ticket_id, &ticket);
+        TicketRevoked {
+            ticket_id,
+            organizer,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -306,6 +343,8 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Pulls an owned ticket off the resale marketplace, returning it to
+    /// `Valid` status.
     pub fn cancel_resale(env: Env, owner: Address, ticket_id: u64) -> Result<(), Error> {
         owner.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
@@ -347,6 +386,8 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Reads the stored `Event` for `event_id`, or `Error::EventNotFound` if
+    /// no event has been registered under that id.
     pub fn get_event(env: &Env, event_id: u64) -> Result<Event, Error> {
         env.storage()
             .persistent()
@@ -354,6 +395,8 @@ impl TicketingContract {
             .ok_or(Error::EventNotFound)
     }
 
+    /// Reads the stored `Ticket` for `ticket_id`, or `Error::TicketNotFound`
+    /// if no ticket has been minted under that id.
     pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, Error> {
         env.storage()
             .persistent()

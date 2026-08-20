@@ -1,10 +1,12 @@
 #![cfg(test)]
 
+extern crate std;
+
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Events as _},
     token::{StellarAssetClient, TokenClient},
-    Env, String,
+    Env, Event, String,
 };
 
 fn setup<'a>() -> (
@@ -88,6 +90,42 @@ fn check_in_marks_used_and_rejects_reentry() {
 
     let result = client.try_check_in(&organizer, &ticket_id);
     assert_eq!(result, Err(Ok(Error::AlreadyUsed)));
+}
+
+#[test]
+fn issue_ticket_and_check_in_publish_events() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "unassigned"),
+        &5_000i128,
+    );
+
+    let issued_event = TicketIssued {
+        ticket_id,
+        event_id: 1,
+    };
+    assert_eq!(
+        env.events().all(),
+        std::vec![issued_event.to_xdr(&env, &client.address)],
+    );
+
+    client.check_in(&organizer, &ticket_id);
+
+    let checked_in_event = TicketCheckedIn {
+        ticket_id,
+        organizer: organizer.clone(),
+    };
+    assert_eq!(
+        env.events().all(),
+        std::vec![checked_in_event.to_xdr(&env, &client.address)],
+    );
 }
 
 #[test]

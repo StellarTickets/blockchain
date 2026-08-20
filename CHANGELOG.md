@@ -5,6 +5,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-20
+
 ### Added
 - Initial `ticketing` contract: event registration, issuance, primary
   sale, transfer, on-chain verification, check-in, revocation, and a

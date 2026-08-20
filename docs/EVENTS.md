@@ -1,6 +1,6 @@
 # On-chain events
 
-The contract publishes two Soroban events, defined with
+The contract publishes three Soroban events, defined with
 `#[contractevent]` in `lib.rs`:
 
 ## `TicketIssued`
@@ -15,6 +15,15 @@ Emitted by `issue_ticket` and `purchase_primary`.
 ## `TicketCheckedIn`
 
 Emitted by `check_in`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `ticket_id` | `u64` | topic |
+| `organizer` | `Address` | |
+
+## `TicketRevoked`
+
+Emitted by `revoke_ticket`.
 
 | Field | Type | Notes |
 |---|---|---|
