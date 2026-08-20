@@ -1,3 +1,3 @@
 # Contributors
 
-- presidojay1- chonilius- prodbycorne- Temi-suwa18- abayomicornelius- abayomiwav- circleboyslimited- miraclesonly- boluwacodes- presidoclintonbased-alt- richardtoms100
+- presidojay1- chonilius- prodbycorne- Temi-suwa18- abayomicornelius- abayomiwav- circleboyslimited- miraclesonly- boluwacodes- presidoclintonbased-alt- richardtoms100- Smoothjane
