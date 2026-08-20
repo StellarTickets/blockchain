@@ -169,9 +169,7 @@ impl TicketingContract {
         }
         let ticket_id = Self::mint(&env, event_id, to, tier, seat, price);
         event.tickets_issued += 1;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &event);
+        Self::save_event(&env, event_id, &event);
         Ok(ticket_id)
     }
 
@@ -196,9 +194,7 @@ impl TicketingContract {
         }
         let ticket_id = Self::mint(&env, event_id, buyer, tier, seat, price);
         event.tickets_issued += 1;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &event);
+        Self::save_event(&env, event_id, &event);
         Ok(ticket_id)
     }
 
@@ -364,6 +360,17 @@ impl TicketingContract {
     fn save_ticket(env: &Env, ticket_id: u64, ticket: &Ticket) {
         let key = DataKey::Ticket(ticket_id);
         env.storage().persistent().set(&key, ticket);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Mirrors `save_ticket`. Writing an Event without extending its TTL lets an
+    /// actively-used event drift toward expiry and be archived, even while
+    /// tickets are still being issued against it.
+    fn save_event(env: &Env, event_id: u64, event: &Event) {
+        let key = DataKey::Event(event_id);
+        env.storage().persistent().set(&key, event);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
