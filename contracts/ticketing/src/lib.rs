@@ -59,7 +59,10 @@ pub struct Ticket {
 }
 
 #[contracttype]
-#[derive(Clone)]
+// Matches its sibling types (TicketStatus, Ticket), which already derive Debug.
+// Without it a DataKey cannot appear in assert_eq! output or a {:?} trace, so a
+// storage-key mismatch in a test reports nothing about which key failed.
+#[derive(Clone, Debug)]
 pub enum DataKey {
     Admin,
     PaymentToken,
