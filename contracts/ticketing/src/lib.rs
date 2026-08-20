@@ -87,7 +87,9 @@ pub enum Error {
     InvalidRoyalty = 13,
 }
 
-const LEDGER_BUMP: u32 = 535_679; // ~31 days at 5s/ledger, matches other Soroban tooling defaults
+// 31 days * 24h * 3600s / 5s per ledger = 535_680 exactly; 535_679 was one
+// ledger short of the documented window.
+const LEDGER_BUMP: u32 = 535_680; // ~31 days at 5s/ledger, matches other Soroban tooling defaults
 const LEDGER_THRESHOLD: u32 = 500_000;
 
 #[contract]
