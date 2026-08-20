@@ -306,6 +306,11 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Withdraws a ticket from the resale market, returning it to `Valid` and
+    /// clearing its asking price.
+    ///
+    /// Requires the caller to be the ticket's current owner. Returns `NotOwner`
+    /// if it is not, and `NotForResale` if the ticket is not currently listed.
     pub fn cancel_resale(env: Env, owner: Address, ticket_id: u64) -> Result<(), Error> {
         owner.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
