@@ -1,4 +1,4 @@
-# StellarTickets — Blockchain
+# StellarTickets — Blockchain (Contracts)
 
 Soroban smart contracts powering [StellarTickets](https://github.com/StellarTickets) —
 *Secure. Verifiable. Powered by Stellar.*
