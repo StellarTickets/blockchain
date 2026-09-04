@@ -59,7 +59,7 @@ pub struct Ticket {
 }
 
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DataKey {
     Admin,
     PaymentToken,
