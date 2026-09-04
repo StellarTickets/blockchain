@@ -5,7 +5,7 @@ Thanks for considering a contribution to the `ticketing` contract.
 ## Development setup
 
 ```bash
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 cargo test -p stellar-tickets-ticketing
 ```
 
