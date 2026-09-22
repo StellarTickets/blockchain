@@ -1,7 +1,8 @@
-#![no_std]
+﻿#![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, token, Address, Env, String,
+    contract, contracterror, contractevent, contractimpl, contracttype, token, Address, Env, Map,
+    String,
 };
 
 #[contractevent]
@@ -34,16 +35,11 @@ pub enum TicketStatus {
 pub struct Event {
     pub organizer: Address,
     pub name: String,
-    /// Category such as "concert", "flight", "sports", "conference", etc.
-    /// Kept as free text metadata rather than a fixed enum so new industries
-    /// don't require a contract migration.
     pub category: String,
-    /// Basis points cap on resale price relative to original sale price
-    /// (e.g. 12000 = 120%). Anti-scalping enforcement.
     pub max_resale_multiplier_bps: u32,
-    /// Basis points of every resale price paid to the organizer as royalty.
     pub royalty_bps: u32,
     pub tickets_issued: u64,
+    pub tier_prices: Map<String, i128>,
 }
 
 #[contracttype]
@@ -87,7 +83,7 @@ pub enum Error {
     InvalidRoyalty = 13,
 }
 
-const LEDGER_BUMP: u32 = 535_679; // ~31 days at 5s/ledger, matches other Soroban tooling defaults
+const LEDGER_BUMP: u32 = 535_679;
 const LEDGER_THRESHOLD: u32 = 500_000;
 
 #[contract]
@@ -95,8 +91,6 @@ pub struct TicketingContract;
 
 #[contractimpl]
 impl TicketingContract {
-    /// One-time setup. `payment_token` is the Stellar Asset Contract (or any
-    /// SEP-41 token) used for on-chain primary sales and resale settlement.
     pub fn initialize(env: Env, admin: Address, payment_token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
@@ -113,9 +107,6 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Registers a new event/route/showing under an organizer. `event_id` is
-    /// chosen by the caller's backend (e.g. a ULID cast to u64) so it can be
-    /// correlated with the off-chain event record.
     pub fn create_event(
         env: Env,
         organizer: Address,
@@ -124,10 +115,16 @@ impl TicketingContract {
         category: String,
         max_resale_multiplier_bps: u32,
         royalty_bps: u32,
+        tier_prices: Map<String, i128>,
     ) -> Result<(), Error> {
         organizer.require_auth();
         if royalty_bps > 10_000 {
             return Err(Error::InvalidRoyalty);
+        }
+        for (_, price) in tier_prices.iter() {
+            if price < 0 {
+                return Err(Error::InvalidPrice);
+            }
         }
         let key = DataKey::Event(event_id);
         if env.storage().persistent().has(&key) {
@@ -140,6 +137,7 @@ impl TicketingContract {
             max_resale_multiplier_bps,
             royalty_bps,
             tickets_issued: 0,
+            tier_prices,
         };
         env.storage().persistent().set(&key, &event);
         env.storage()
@@ -148,8 +146,6 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Organizer-authorized issuance for tickets already paid for off-chain
-    /// (card payment, comp, or fiat-to-crypto settled by the platform).
     pub fn issue_ticket(
         env: Env,
         organizer: Address,
@@ -175,21 +171,19 @@ impl TicketingContract {
         Ok(ticket_id)
     }
 
-    /// Fully on-chain primary sale: buyer pays the organizer directly in
-    /// `payment_token`, then the ticket is minted to the buyer atomically.
     pub fn purchase_primary(
         env: Env,
         buyer: Address,
         event_id: u64,
         tier: String,
         seat: String,
-        price: i128,
     ) -> Result<u64, Error> {
         buyer.require_auth();
+        let mut event = Self::get_event(&env, event_id)?;
+        let price = event.tier_prices.get(tier.clone()).ok_or(Error::InvalidPrice)?;
         if price < 0 {
             return Err(Error::InvalidPrice);
         }
-        let mut event = Self::get_event(&env, event_id)?;
         let token_client = token::Client::new(&env, &Self::payment_token(&env)?);
         if price > 0 {
             token_client.transfer(&buyer, &event.organizer, &price);
@@ -202,7 +196,6 @@ impl TicketingContract {
         Ok(ticket_id)
     }
 
-    /// Direct, non-marketplace transfer (gift, family member, etc).
     pub fn transfer_ticket(
         env: Env,
         from: Address,
@@ -226,16 +219,10 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Read-only on-chain verification — the core fraud-prevention primitive.
-    /// Any scanner/app can call this without authentication to confirm a
-    /// ticket's current owner and status before admitting entry.
     pub fn verify_ticket(env: Env, ticket_id: u64) -> Result<Ticket, Error> {
         Self::get_ticket(&env, ticket_id)
     }
 
-    /// Marks a ticket as used at the point of entry. Only the event's
-    /// organizer (or their delegated gate device, via a shared Soroban
-    /// signer) may check a ticket in, and only once.
     pub fn check_in(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Error> {
         organizer.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
@@ -258,9 +245,6 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Fraud prevention: organizer voids a ticket (chargeback, counterfeit
-    /// report, policy violation). Revoked tickets can never be transferred,
-    /// resold, or checked in again.
     pub fn revoke_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Error> {
         organizer.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
@@ -273,9 +257,6 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Lists an owned, valid ticket on the resale marketplace. The price is
-    /// capped at the event's `max_resale_multiplier_bps` of the original
-    /// sale price to curb scalping.
     pub fn list_for_resale(
         env: Env,
         owner: Address,
@@ -321,9 +302,6 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Buys a resale-listed ticket. Payment is settled atomically on-chain:
-    /// the organizer's royalty cut is paid first, the remainder to the
-    /// seller, then ownership transfers to the buyer.
     pub fn buy_resale(env: Env, buyer: Address, ticket_id: u64) -> Result<(), Error> {
         buyer.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;

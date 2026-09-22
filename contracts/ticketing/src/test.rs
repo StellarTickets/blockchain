@@ -1,10 +1,10 @@
-#![cfg(test)]
+﻿#![cfg(test)]
 
 use super::*;
 use soroban_sdk::{
     testutils::Address as _,
     token::{StellarAssetClient, TokenClient},
-    Env, String,
+    Env, Map, String,
 };
 
 fn setup<'a>() -> (
@@ -34,6 +34,11 @@ fn setup<'a>() -> (
 }
 
 fn make_event(env: &Env, client: &TicketingContractClient, organizer: &Address, event_id: u64) {
+    let mut tier_prices = Map::new(env);
+    tier_prices.set(String::from_str(env, "GA"), 2_000i128);
+    tier_prices.set(String::from_str(env, "VIP"), 10_000i128);
+    tier_prices.set(String::from_str(env, "Free"), 0i128);
+
     client.create_event(
         organizer,
         &event_id,
@@ -41,6 +46,7 @@ fn make_event(env: &Env, client: &TicketingContractClient, organizer: &Address, 
         &String::from_str(env, "concert"),
         &12_000u32, // max 120% of face value on resale
         &500u32,    // 5% organizer royalty
+        &tier_prices,
     );
 }
 
@@ -140,7 +146,7 @@ fn transfer_moves_ownership() {
 #[test]
 fn resale_listing_rejects_prices_above_cap() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
-    make_event(&env, &client, &organizer, 1); // cap is 120% of face value
+    make_event(&env, &client, &organizer, 1);
     let buyer = Address::generate(&env);
     let ticket_id = client.issue_ticket(
         &organizer,
@@ -163,7 +169,7 @@ fn resale_listing_rejects_prices_above_cap() {
 #[test]
 fn buy_resale_splits_royalty_and_transfers_ownership() {
     let (env, client, token, token_asset, _admin, organizer) = setup();
-    make_event(&env, &client, &organizer, 1); // 5% royalty
+    make_event(&env, &client, &organizer, 1);
     let seller = Address::generate(&env);
     let buyer = Address::generate(&env);
 
@@ -180,7 +186,6 @@ fn buy_resale_splits_royalty_and_transfers_ownership() {
     token_asset.mint(&buyer, &10_000i128);
     client.buy_resale(&buyer, &ticket_id);
 
-    // 5% of 1100 = 55 to organizer, 1045 to seller.
     assert_eq!(token.balance(&organizer), 55);
     assert_eq!(token.balance(&seller), 1_045);
     assert_eq!(token.balance(&buyer), 10_000 - 1_100);
@@ -203,7 +208,6 @@ fn purchase_primary_pays_organizer_on_chain() {
         &1,
         &String::from_str(&env, "GA"),
         &String::from_str(&env, "unassigned"),
-        &2_000i128,
     );
 
     assert_eq!(token.balance(&organizer), 2_000);
@@ -349,6 +353,9 @@ fn create_event_rejects_a_duplicate_event_id() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
     make_event(&env, &client, &organizer, 1);
 
+    let mut tier_prices = Map::new(&env);
+    tier_prices.set(String::from_str(&env, "GA"), 2_000i128);
+
     let result = client.try_create_event(
         &organizer,
         &1,
@@ -356,6 +363,7 @@ fn create_event_rejects_a_duplicate_event_id() {
         &String::from_str(&env, "concert"),
         &12_000u32,
         &500u32,
+        &tier_prices,
     );
     assert_eq!(result, Err(Ok(Error::EventAlreadyExists)));
 }
@@ -408,6 +416,9 @@ fn issue_ticket_allows_a_zero_price_comp_ticket() {
 #[test]
 fn create_event_rejects_a_royalty_above_10_000_bps() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    let mut tier_prices = Map::new(&env);
+    tier_prices.set(String::from_str(&env, "GA"), 2_000i128);
+
     let result = client.try_create_event(
         &organizer,
         &1,
@@ -415,6 +426,7 @@ fn create_event_rejects_a_royalty_above_10_000_bps() {
         &String::from_str(&env, "concert"),
         &12_000u32,
         &10_001u32,
+        &tier_prices,
     );
     assert_eq!(result, Err(Ok(Error::InvalidRoyalty)));
 }
@@ -529,7 +541,6 @@ fn purchase_primary_increments_tickets_issued() {
         &1,
         &String::from_str(&env, "GA"),
         &String::from_str(&env, "unassigned"),
-        &1_000i128,
     );
 
     assert_eq!(client.get_event(&1).tickets_issued, 1);
@@ -558,6 +569,9 @@ fn revoke_permanently_blocks_resale_actions() {
 #[test]
 fn buy_resale_with_zero_royalty_pays_the_seller_in_full() {
     let (env, client, token, token_asset, _admin, organizer) = setup();
+    let mut tier_prices = Map::new(&env);
+    tier_prices.set(String::from_str(&env, "GA"), 1_000i128);
+
     client.create_event(
         &organizer,
         &1,
@@ -565,6 +579,7 @@ fn buy_resale_with_zero_royalty_pays_the_seller_in_full() {
         &String::from_str(&env, "corporate_events"),
         &15_000u32,
         &0u32, // no royalty
+        &tier_prices,
     );
     let seller = Address::generate(&env);
     let buyer = Address::generate(&env);
@@ -589,6 +604,9 @@ fn buy_resale_with_zero_royalty_pays_the_seller_in_full() {
 #[test]
 fn resale_price_exactly_at_the_face_value_cap_is_allowed() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    let mut tier_prices = Map::new(&env);
+    tier_prices.set(String::from_str(&env, "GA"), 1_000i128);
+
     client.create_event(
         &organizer,
         &1,
@@ -596,6 +614,7 @@ fn resale_price_exactly_at_the_face_value_cap_is_allowed() {
         &String::from_str(&env, "universities"),
         &10_000u32, // no markup allowed at all
         &0u32,
+        &tier_prices,
     );
     let owner = Address::generate(&env);
     let ticket_id = client.issue_ticket(
@@ -607,11 +626,9 @@ fn resale_price_exactly_at_the_face_value_cap_is_allowed() {
         &1_000i128,
     );
 
-    // Exactly face value should be allowed even with a 100% (no markup) cap.
     client.list_for_resale(&owner, &ticket_id, &1_000i128);
     assert_eq!(client.verify_ticket(&ticket_id).resale_price, 1_000);
 
-    // One unit above face value must still be rejected under the same cap.
     let over = client.try_list_for_resale(&owner, &ticket_id, &1_001i128);
     assert_eq!(over, Err(Ok(Error::ResalePriceExceedsCap)));
 }
@@ -647,13 +664,46 @@ fn purchase_primary_allows_a_free_event() {
     let ticket_id = client.purchase_primary(
         &buyer,
         &1,
-        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "Free"),
         &String::from_str(&env, "unassigned"),
-        &0i128,
     );
 
     assert_eq!(token.balance(&organizer), 0);
     let ticket = client.verify_ticket(&ticket_id);
     assert_eq!(ticket.owner, buyer);
     assert_eq!(ticket.original_price, 0);
+}
+
+#[test]
+fn purchase_primary_rejects_unregistered_tier() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+    token_asset.mint(&buyer, &5_000i128);
+
+    let result = client.try_purchase_primary(
+        &buyer,
+        &1,
+        &String::from_str(&env, "NON_EXISTENT_TIER"),
+        &String::from_str(&env, "unassigned"),
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidPrice)));
+}
+
+#[test]
+fn create_event_rejects_negative_tier_price() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    let mut tier_prices = Map::new(&env);
+    tier_prices.set(String::from_str(&env, "GA"), -500i128);
+
+    let result = client.try_create_event(
+        &organizer,
+        &1,
+        &String::from_str(&env, "Negative Price Event"),
+        &String::from_str(&env, "concert"),
+        &12_000u32,
+        &500u32,
+        &tier_prices,
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidPrice)));
 }

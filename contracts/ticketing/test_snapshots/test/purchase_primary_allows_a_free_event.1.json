@@ -74,6 +74,34 @@
                 },
                 {
                   "u32": 500
+                },
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "string": "Free"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "string": "GA"
+                      },
+                      "val": {
+                        "i128": "2000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "string": "VIP"
+                      },
+                      "val": {
+                        "i128": "10000"
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -98,13 +126,10 @@
                   "u64": "1"
                 },
                 {
-                  "string": "GA"
+                  "string": "Free"
                 },
                 {
                   "string": "unassigned"
-                },
-                {
-                  "i128": "0"
                 }
               ]
             }
@@ -274,6 +299,39 @@
                     "val": {
                       "u64": "1"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "tier_prices"
+                    },
+                    "val": {
+                      "map": [
+                        {
+                          "key": {
+                            "string": "Free"
+                          },
+                          "val": {
+                            "i128": "0"
+                          }
+                        },
+                        {
+                          "key": {
+                            "string": "GA"
+                          },
+                          "val": {
+                            "i128": "2000"
+                          }
+                        },
+                        {
+                          "key": {
+                            "string": "VIP"
+                          },
+                          "val": {
+                            "i128": "10000"
+                          }
+                        }
+                      ]
+                    }
                   }
                 ]
               }
@@ -360,7 +418,7 @@
                       "symbol": "tier"
                     },
                     "val": {
-                      "string": "GA"
+                      "string": "Free"
                     }
                   }
                 ]
