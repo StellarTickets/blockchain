@@ -286,6 +286,7 @@ The [`docs/`](docs/README.md) directory goes deeper on specific topics:
 | [`GLOSSARY.md`](docs/GLOSSARY.md) | Extended Soroban/Stellar terminology |
 | [`INDUSTRIES.md`](docs/INDUSTRIES.md) | How the 12 supported verticals map onto `category` |
 | [`TESTING.md`](docs/TESTING.md) | Test suite conventions |
+| [`DOCTESTS.md`](docs/DOCTESTS.md) | Public API doctest examples — run with `cargo test --doc` |
 | [`UPGRADES.md`](docs/UPGRADES.md) | Contract upgrade strategy |
 | [`FAQ.md`](docs/FAQ.md) | Common questions |
 
