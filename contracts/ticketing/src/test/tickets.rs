@@ -25,6 +25,38 @@ fn issues_and_verifies_ticket() {
 }
 
 #[test]
+fn verify_ticket_reports_each_ticket_state() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    let valid_owner = Address::generate(&env);
+    let resale_owner = Address::generate(&env);
+    let used_owner = Address::generate(&env);
+    let revoked_owner = Address::generate(&env);
+
+    let valid_id = issue_sample_ticket(&env, &client, &organizer, 1, &valid_owner, 1_000);
+    let resale_id = issue_sample_ticket(&env, &client, &organizer, 1, &resale_owner, 1_000);
+    let used_id = issue_sample_ticket(&env, &client, &organizer, 1, &used_owner, 1_000);
+    let revoked_id =
+        issue_sample_ticket(&env, &client, &organizer, 1, &revoked_owner, 1_000);
+
+    client.list_for_resale(&resale_owner, &resale_id, &1_100);
+    client.check_in(&organizer, &used_id);
+    client.revoke_ticket(&organizer, &revoked_id);
+
+    let cases = [
+        (valid_id, TicketStatus::Valid),
+        (resale_id, TicketStatus::Resale),
+        (used_id, TicketStatus::Used),
+        (revoked_id, TicketStatus::Revoked),
+    ];
+
+    for (ticket_id, expected_status) in cases {
+        assert_eq!(client.verify_ticket(&ticket_id).status, expected_status);
+    }
+}
+
+#[test]
 fn get_ticket_reports_not_found_for_an_unknown_id() {
     let (env, client, _token, _token_asset, _admin, _organizer) = setup();
     let result = client.try_verify_ticket(&999);
