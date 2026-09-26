@@ -40,11 +40,6 @@ pub struct TicketingContract;
 impl TicketingContract {
     /// One-time setup. `payment_token` is the Stellar Asset Contract (or any
     /// SEP-41 token) used for on-chain primary sales and resale settlement.
-    ///
-    /// # Example
-    /// ```ignore
-    /// client.initialize(&admin, &payment_token_address);
-    /// ```
     pub fn initialize(env: Env, admin: Address, payment_token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
@@ -57,7 +52,9 @@ impl TicketingContract {
         env.storage()
             .instance()
             .set(&DataKey::PaymentToken, &payment_token);
-        env.storage().instance().set(&DataKey::TokenDecimals, &decimals);
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenDecimals, &decimals);
         env.storage().instance().set(&DataKey::NextTicketId, &0u64);
         env.storage()
             .instance()
@@ -124,8 +121,12 @@ impl TicketingContract {
         env.storage()
             .instance()
             .set(&DataKey::PaymentToken, &pending.token);
-        env.storage().instance().set(&DataKey::TokenDecimals, &decimals);
-        env.storage().instance().remove(&DataKey::PendingPaymentToken);
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenDecimals, &decimals);
+        env.storage()
+            .instance()
+            .remove(&DataKey::PendingPaymentToken);
         PaymentTokenChanged {
             admin,
             old_token,
@@ -138,21 +139,6 @@ impl TicketingContract {
     /// Registers a new event/route/showing under an organizer. `event_id` is
     /// chosen by the caller's backend (e.g. a ULID cast to u64) so it can be
     /// correlated with the off-chain event record.
-    ///
-    /// # Example
-    /// ```ignore
-    /// client.create_event(
-    ///     &organizer,
-    ///     &1u64,
-    ///     &String::from_str(&env, "Summer Fest"),
-    ///     &String::from_str(&env, "concert"),
-    ///     &12_000u32,
-    ///     &500u32,
-    ///     &10_000u64,
-    ///     &100u64,
-    ///     &200u64,
-    /// );
-    /// ```
     pub fn create_event(
         env: Env,
         organizer: Address,
@@ -166,7 +152,7 @@ impl TicketingContract {
         resale_cutoff_seconds: u64,
     ) -> Result<(), Error> {
         organizer.require_auth();
-        if royalty_bps > BPS_DENOMINATOR {
+        if royalty_bps > 10_000 {
             return Err(Error::InvalidRoyalty);
         }
         if starts_at <= env.ledger().timestamp() {
@@ -181,6 +167,60 @@ impl TicketingContract {
             name,
             category,
             max_resale_multiplier_bps,
+            min_resale_multiplier_bps: None,
+            max_transfers_per_ticket: None,
+            royalty_bps,
+            tickets_issued: 0,
+            starts_at,
+            transfer_freeze_seconds,
+            resale_cutoff_seconds,
+            escrow_enabled: false,
+            escrow_release_ledger: 0,
+            escrow_balance: 0,
+            payment_token: None,
+        };
+        env.storage().persistent().set(&key, &event);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        Ok(())
+    }
+
+    /// Registers an event with optional resale floor and transfer limit.
+    /// Kept separate from `create_event` to preserve the original entrypoint
+    /// ABI for existing deployments.
+    pub fn create_event_with_options(
+        env: Env,
+        organizer: Address,
+        event_id: u64,
+        name: String,
+        category: String,
+        max_resale_multiplier_bps: u32,
+        royalty_bps: u32,
+        starts_at: u64,
+        transfer_freeze_seconds: u64,
+        resale_cutoff_seconds: u64,
+        min_resale_multiplier_bps: Option<u32>,
+        max_transfers_per_ticket: Option<u32>,
+    ) -> Result<(), Error> {
+        organizer.require_auth();
+        if royalty_bps > 10_000 {
+            return Err(Error::InvalidRoyalty);
+        }
+        if starts_at <= env.ledger().timestamp() {
+            return Err(Error::InvalidEventTime);
+        }
+        let key = DataKey::Event(event_id);
+        if env.storage().persistent().has(&key) {
+            return Err(Error::EventAlreadyExists);
+        }
+        let event = Event {
+            organizer,
+            name,
+            category,
+            max_resale_multiplier_bps,
+            min_resale_multiplier_bps,
+            max_transfers_per_ticket,
             royalty_bps,
             tickets_issued: 0,
             starts_at,
@@ -222,7 +262,9 @@ impl TicketingContract {
             }
         }
         let mut event = Self::get_event(&env, event_id)?;
-        Self::require_organizer(&event, &organizer)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
 
         env.prng().shuffle(&mut entrants);
         let mut ticket_ids = Vec::new(&env);
@@ -260,7 +302,9 @@ impl TicketingContract {
     ) -> Result<(), Error> {
         organizer.require_auth();
         let mut event = Self::get_event(&env, event_id)?;
-        Self::require_organizer(&event, &organizer)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
         if event.tickets_issued > 0 {
             return Err(Error::EventAlreadyStarted);
         }
@@ -286,7 +330,9 @@ impl TicketingContract {
     ) -> Result<(), Error> {
         organizer.require_auth();
         let mut event = Self::get_event(&env, event_id)?;
-        Self::require_organizer(&event, &organizer)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
         if event.tickets_issued > 0 {
             return Err(Error::TicketsAlreadyIssued);
         }
@@ -305,23 +351,11 @@ impl TicketingContract {
     /// (issue #235).
     pub fn event_payment_token(env: Env, event_id: u64) -> Result<Address, Error> {
         let event = Self::get_event(&env, event_id)?;
-        Self::payment_token_for_event(env, &event)
+        Self::payment_token_for_event(&env, &event)
     }
 
     /// Organizer-authorized issuance for tickets already paid for off-chain
     /// (card payment, comp, or fiat-to-crypto settled by the platform).
-    ///
-    /// # Example
-    /// ```ignore
-    /// let ticket_id = client.issue_ticket(
-    ///     &organizer,
-    ///     &1u64,
-    ///     &buyer,
-    ///     &String::from_str(&env, "VIP"),
-    ///     &String::from_str(&env, "A-1"),
-    ///     &5_000i128,
-    /// );
-    /// ```
     pub fn issue_ticket(
         env: Env,
         organizer: Address,
@@ -336,7 +370,9 @@ impl TicketingContract {
             return Err(Error::InvalidPrice);
         }
         let mut event = Self::get_event(&env, event_id)?;
-        Self::require_organizer(&event, &organizer)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
         let ticket_id = Self::mint(&env, event_id, to, tier, seat, price);
         event.tickets_issued += 1;
         env.storage()
@@ -347,17 +383,6 @@ impl TicketingContract {
 
     /// Fully on-chain primary sale: buyer pays the organizer directly in
     /// `payment_token`, then the ticket is minted to the buyer atomically.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let ticket_id = client.purchase_primary(
-    ///     &buyer,
-    ///     &1u64,
-    ///     &String::from_str(&env, "GA"),
-    ///     &String::from_str(&env, "unassigned"),
-    ///     &5_000i128,
-    /// );
-    /// ```
     pub fn purchase_primary(
         env: Env,
         buyer: Address,
@@ -397,7 +422,9 @@ impl TicketingContract {
     pub fn release_escrow(env: Env, organizer: Address, event_id: u64) -> Result<(), Error> {
         organizer.require_auth();
         let mut event = Self::get_event(&env, event_id)?;
-        Self::require_organizer(&event, &organizer)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
         if !event.escrow_enabled {
             return Err(Error::EscrowNotEnabled);
         }
@@ -437,11 +464,6 @@ impl TicketingContract {
     }
 
     /// Direct, non-marketplace transfer (gift, family member, etc).
-    ///
-    /// # Example
-    /// ```ignore
-    /// client.transfer_ticket(&sender, &ticket_id, &recipient);
-    /// ```
     pub fn transfer_ticket(
         env: Env,
         from: Address,
@@ -453,12 +475,18 @@ impl TicketingContract {
         if ticket.owner != from {
             return Err(Error::NotOwner);
         }
-        Self::ensure_active(&ticket)?;
+        match ticket.status {
+            TicketStatus::Used => return Err(Error::AlreadyUsed),
+            TicketStatus::Revoked => return Err(Error::Revoked),
+            _ => {}
+        }
         let event = Self::get_event(&env, ticket.event_id)?;
+        Self::ensure_transfer_allowed(&ticket, &event)?;
         if Self::transfer_frozen(&env, &event) {
             return Err(Error::TransfersFrozen);
         }
         ticket.owner = to;
+        ticket.transfers += 1;
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
@@ -486,12 +514,18 @@ impl TicketingContract {
             if ticket.owner != from {
                 return Err(Error::NotOwner);
             }
-            Self::ensure_active(&ticket)?;
+            match ticket.status {
+                TicketStatus::Used => return Err(Error::AlreadyUsed),
+                TicketStatus::Revoked => return Err(Error::Revoked),
+                _ => {}
+            }
             let event = Self::get_event(&env, ticket.event_id)?;
             if Self::transfer_frozen(&env, &event) {
                 return Err(Error::TransfersFrozen);
             }
+            Self::ensure_transfer_allowed(&ticket, &event)?;
             ticket.owner = to.clone();
+            ticket.transfers += 1;
             ticket.status = TicketStatus::Valid;
             ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
@@ -518,7 +552,11 @@ impl TicketingContract {
         if ticket.owner != owner {
             return Err(Error::NotOwner);
         }
-        Self::ensure_active(&ticket)?;
+        match ticket.status {
+            TicketStatus::Used => return Err(Error::AlreadyUsed),
+            TicketStatus::Revoked => return Err(Error::Revoked),
+            _ => {}
+        }
         if ticket.status == TicketStatus::Resale {
             ticket.status = TicketStatus::Valid;
             ticket.resale_price = 0;
@@ -564,14 +602,20 @@ impl TicketingContract {
         if ticket.owner != claim.from {
             return Err(Error::NotOwner);
         }
-        Self::ensure_active(&ticket)?;
+        match ticket.status {
+            TicketStatus::Used => return Err(Error::AlreadyUsed),
+            TicketStatus::Revoked => return Err(Error::Revoked),
+            _ => {}
+        }
 
         let event = Self::get_event(&env, ticket.event_id)?;
         if Self::transfer_frozen(&env, &event) {
             return Err(Error::TransfersFrozen);
         }
+        Self::ensure_transfer_allowed(&ticket, &event)?;
 
         ticket.owner = recipient;
+        ticket.transfers += 1;
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         env.storage().persistent().remove(&key);
@@ -582,12 +626,6 @@ impl TicketingContract {
     /// Read-only on-chain verification — the core fraud-prevention primitive.
     /// Any scanner/app can call this without authentication to confirm a
     /// ticket's current owner and status before admitting entry.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let ticket = client.verify_ticket(&ticket_id);
-    /// assert_eq!(ticket.status, TicketStatus::Valid);
-    /// ```
     pub fn verify_ticket(env: Env, ticket_id: u64) -> Result<Ticket, Error> {
         Self::get_ticket(&env, ticket_id)
     }
@@ -612,17 +650,18 @@ impl TicketingContract {
     /// Marks a ticket as used at the point of entry. Only the event's
     /// organizer (or their delegated gate device, via a shared Soroban
     /// signer) may check a ticket in, and only once.
-    ///
-    /// # Example
-    /// ```ignore
-    /// client.check_in(&organizer, &ticket_id);
-    /// ```
     pub fn check_in(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Error> {
         organizer.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
         let event = Self::get_event(&env, ticket.event_id)?;
-        Self::require_organizer(&event, &organizer)?;
-        Self::ensure_active(&ticket)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
+        match ticket.status {
+            TicketStatus::Used => return Err(Error::AlreadyUsed),
+            TicketStatus::Revoked => return Err(Error::Revoked),
+            _ => {}
+        }
         ticket.status = TicketStatus::Used;
         Self::remove_gift_claim(&env, ticket_id);
         Self::save_ticket(&env, ticket_id, &ticket);
@@ -647,8 +686,14 @@ impl TicketingContract {
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket(&env, ticket_id)?;
             let event = Self::get_event(&env, ticket.event_id)?;
-            Self::require_organizer(&event, &organizer)?;
-            Self::ensure_active(&ticket)?;
+            if event.organizer != organizer {
+                return Err(Error::NotOrganizer);
+            }
+            match ticket.status {
+                TicketStatus::Used => return Err(Error::AlreadyUsed),
+                TicketStatus::Revoked => return Err(Error::Revoked),
+                _ => {}
+            }
             ticket.status = TicketStatus::Used;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
@@ -668,9 +713,33 @@ impl TicketingContract {
         organizer.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
         let event = Self::get_event(&env, ticket.event_id)?;
-        Self::require_organizer(&event, &organizer)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
         ticket.status = TicketStatus::Revoked;
         Self::remove_gift_claim(&env, ticket_id);
+        Self::save_ticket(&env, ticket_id, &ticket);
+        Ok(())
+    }
+
+    /// Updates a ticket's seat assignment. Only the organizer of the ticket's
+    /// event may reassign it, and the ticket remains in its current state.
+    pub fn set_seat(
+        env: Env,
+        organizer: Address,
+        ticket_id: u64,
+        seat: String,
+    ) -> Result<(), Error> {
+        organizer.require_auth();
+        let mut ticket = Self::get_ticket(&env, ticket_id)?;
+        let event = Self::get_event(&env, ticket.event_id)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
+        if ticket.status == TicketStatus::Revoked {
+            return Err(Error::Revoked);
+        }
+        ticket.seat = seat;
         Self::save_ticket(&env, ticket_id, &ticket);
         Ok(())
     }
@@ -690,7 +759,9 @@ impl TicketingContract {
         organizer.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
         let event = Self::get_event(&env, ticket.event_id)?;
-        Self::require_organizer(&event, &organizer)?;
+        if event.organizer != organizer {
+            return Err(Error::NotOrganizer);
+        }
         if ticket.status == TicketStatus::Used {
             return Err(Error::AlreadyUsed);
         }
@@ -718,7 +789,9 @@ impl TicketingContract {
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket(&env, ticket_id)?;
             let event = Self::get_event(&env, ticket.event_id)?;
-            Self::require_organizer(&event, &organizer)?;
+            if event.organizer != organizer {
+                return Err(Error::NotOrganizer);
+            }
             ticket.status = TicketStatus::Revoked;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
@@ -729,11 +802,6 @@ impl TicketingContract {
     /// Lists an owned, valid ticket on the resale marketplace. The price is
     /// capped at the event's `max_resale_multiplier_bps` of the original
     /// sale price to curb scalping.
-    ///
-    /// # Example
-    /// ```ignore
-    /// client.list_for_resale(&owner, &ticket_id, &1_100i128);
-    /// ```
     pub fn list_for_resale(
         env: Env,
         owner: Address,
@@ -748,15 +816,24 @@ impl TicketingContract {
         if ticket.owner != owner {
             return Err(Error::NotOwner);
         }
-        Self::ensure_active(&ticket)?;
+        match ticket.status {
+            TicketStatus::Used => return Err(Error::AlreadyUsed),
+            TicketStatus::Revoked => return Err(Error::Revoked),
+            _ => {}
+        }
         let event = Self::get_event(&env, ticket.event_id)?;
         if Self::resale_closed(&env, &event) {
             return Err(Error::ResaleClosed);
         }
-        let cap =
-            ticket.original_price * event.max_resale_multiplier_bps as i128 / BPS_DENOMINATOR as i128;
+        let cap = ticket.original_price * event.max_resale_multiplier_bps as i128 / 10_000;
         if price > cap {
             return Err(Error::ResalePriceExceedsCap);
+        }
+        if let Some(floor_bps) = event.min_resale_multiplier_bps {
+            let floor = ticket.original_price * floor_bps as i128 / 10_000;
+            if price < floor {
+                return Err(Error::ResalePriceBelowFloor);
+            }
         }
         ticket.status = TicketStatus::Resale;
         ticket.resale_price = price;
@@ -765,12 +842,6 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Cancels an active resale listing, returning the ticket to Valid status.
-    ///
-    /// # Example
-    /// ```ignore
-    /// client.cancel_resale(&owner, &ticket_id);
-    /// ```
     pub fn cancel_resale(env: Env, owner: Address, ticket_id: u64) -> Result<(), Error> {
         owner.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
@@ -789,11 +860,6 @@ impl TicketingContract {
     /// Buys a resale-listed ticket. Payment is settled atomically on-chain:
     /// the organizer's royalty cut is paid first, the remainder to the
     /// seller, then ownership transfers to the buyer.
-    ///
-    /// # Example
-    /// ```ignore
-    /// client.buy_resale(&buyer, &ticket_id);
-    /// ```
     pub fn buy_resale(env: Env, buyer: Address, ticket_id: u64) -> Result<(), Error> {
         buyer.require_auth();
         let mut ticket = Self::get_ticket(&env, ticket_id)?;
@@ -804,8 +870,9 @@ impl TicketingContract {
         if Self::resale_closed(&env, &event) {
             return Err(Error::ResaleClosed);
         }
+        Self::ensure_transfer_allowed(&ticket, &event)?;
         let token_client = token::Client::new(&env, &Self::payment_token_for_event(&env, &event)?);
-        let royalty = ticket.resale_price * event.royalty_bps as i128 / BPS_DENOMINATOR as i128;
+        let royalty = ticket.resale_price * event.royalty_bps as i128 / 10_000;
         let seller_amount = ticket.resale_price - royalty;
         if royalty > 0 {
             token_client.transfer(&buyer, &event.organizer, &royalty);
@@ -814,6 +881,7 @@ impl TicketingContract {
             token_client.transfer(&buyer, &ticket.owner, &seller_amount);
         }
         ticket.owner = buyer;
+        ticket.transfers += 1;
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
@@ -821,11 +889,6 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Fetches an event by its id.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::EventNotFound` when no event with `event_id` exists.
     pub fn get_event(env: &Env, event_id: u64) -> Result<Event, Error> {
         env.storage()
             .persistent()
@@ -833,11 +896,6 @@ impl TicketingContract {
             .ok_or(Error::EventNotFound)
     }
 
-    /// Fetches a ticket by its id.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::TicketNotFound` when no ticket with `ticket_id` exists.
     pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, Error> {
         env.storage()
             .persistent()
@@ -868,6 +926,15 @@ impl TicketingContract {
 
     fn resale_closed(env: &Env, event: &Event) -> bool {
         env.ledger().timestamp() >= event.starts_at.saturating_sub(event.resale_cutoff_seconds)
+    }
+
+    fn ensure_transfer_allowed(ticket: &Ticket, event: &Event) -> Result<(), Error> {
+        if let Some(max_transfers) = event.max_transfers_per_ticket {
+            if ticket.transfers >= max_transfers {
+                return Err(Error::TransferLimitExceeded);
+            }
+        }
+        Ok(())
     }
 
     fn enforce_purchase_throttle(env: &Env, buyer: &Address) -> Result<(), Error> {
@@ -909,21 +976,6 @@ impl TicketingContract {
         }
         admin.require_auth();
         Ok(())
-    }
-
-    fn require_organizer(event: &Event, organizer: &Address) -> Result<(), Error> {
-        if event.organizer != *organizer {
-            return Err(Error::NotOrganizer);
-        }
-        Ok(())
-    }
-
-    fn ensure_active(ticket: &Ticket) -> Result<(), Error> {
-        match ticket.status {
-            TicketStatus::Used => Err(Error::AlreadyUsed),
-            TicketStatus::Revoked => Err(Error::Revoked),
-            _ => Ok(()),
-        }
     }
 
     /// Probes `token` with a `decimals()` call so an address that is not a
@@ -976,6 +1028,7 @@ impl TicketingContract {
             status: TicketStatus::Valid,
             original_price: price,
             resale_price: 0,
+            transfers: 0,
         };
         Self::save_ticket(env, ticket_id, &ticket);
         env.storage()
@@ -992,4 +1045,3 @@ impl TicketingContract {
 
 #[cfg(test)]
 mod test;
-

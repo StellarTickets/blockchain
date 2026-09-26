@@ -71,4 +71,8 @@ pub enum Error {
     TimelockNotElapsed = 31,
     /// Tickets have already been issued for the event.
     TicketsAlreadyIssued = 32,
+    /// The ticket has reached its event's ownership transfer limit.
+    TransferLimitExceeded = 33,
+    /// The resale price is below the event's configured resale floor.
+    ResalePriceBelowFloor = 34,
 }

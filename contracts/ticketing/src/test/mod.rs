@@ -11,5 +11,6 @@ mod budget;
 mod events;
 mod resale;
 mod tickets;
+mod transfer_controls;
 
 pub use helpers::*;

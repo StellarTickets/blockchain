@@ -32,6 +32,10 @@ pub struct Event {
     /// Basis points cap on resale price relative to original sale price
     /// (e.g. 12000 = 120%). Anti-scalping enforcement.
     pub max_resale_multiplier_bps: u32,
+    /// Optional floor on resale price relative to original price.
+    pub min_resale_multiplier_bps: Option<u32>,
+    /// Optional maximum number of ownership transfers for tickets in this event.
+    pub max_transfers_per_ticket: Option<u32>,
     /// Basis points of every resale price paid to the organizer as royalty.
     pub royalty_bps: u32,
     /// Number of tickets issued for the event so far.
@@ -76,6 +80,8 @@ pub struct Ticket {
     pub original_price: i128,
     /// Asking price while the ticket is listed for resale; 0 otherwise.
     pub resale_price: i128,
+    /// Number of ownership transfers completed for this ticket.
+    pub transfers: u32,
 }
 
 /// A pending gift-claim link for a ticket.
