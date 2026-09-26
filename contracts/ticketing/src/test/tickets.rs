@@ -25,6 +25,20 @@ fn issues_and_verifies_ticket() {
 }
 
 #[test]
+fn ticket_ids_are_sequential_and_unique_across_fifty_mints() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    for expected_id in 0..50u64 {
+        let owner = Address::generate(&env);
+        let ticket_id = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+
+        assert_eq!(ticket_id, expected_id);
+        assert_eq!(client.verify_ticket(&ticket_id).owner, owner);
+    }
+}
+
+#[test]
 fn get_ticket_reports_not_found_for_an_unknown_id() {
     let (env, client, _token, _token_asset, _admin, _organizer) = setup();
     let result = client.try_verify_ticket(&999);
