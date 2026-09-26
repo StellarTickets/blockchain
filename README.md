@@ -40,7 +40,7 @@ before. Skip this if you already know the stack.
 | **`require_auth()`** | A Soroban SDK call that says "this specific address must have cryptographically signed this transaction, or it fails." | Every function below that changes state calls this on the relevant party (organizer, ticket owner, buyer) — it's what makes `NotOwner`/`NotOrganizer` checks actually enforceable, not just a suggestion. |
 | **Basis points (bps)** | A unit equal to 1/100th of a percent. 100 bps = 1%, 10,000 bps = 100%. | `royalty_bps` and `max_resale_multiplier_bps` are both expressed this way — e.g. `royalty_bps: 500` means a 5% royalty on every resale. |
 | **SEP-41 token** | Stellar's standard interface for fungible tokens (an ERC-20 equivalent), implemented by both the native XLM asset and custom Stellar Asset Contracts. | The `payment_token` this contract is initialized with is any SEP-41 token — primary sales and resale settlement move that token, not XLM specifically. |
-| **Ledger TTL / "bump"** | Soroban storage isn't permanent by default — each entry has a time-to-live measured in ledgers, and has to be periodically extended ("bumped") or it gets archived. | Every write in this contract calls `extend_ttl` so events and tickets don't silently expire from storage; see `LEDGER_BUMP`/`LEDGER_THRESHOLD` in `lib.rs`. |
+| **Ledger TTL / "bump"** | Soroban storage isn't permanent by default — each entry has a time-to-live measured in ledgers, and has to be periodically extended ("bumped") or it gets archived. | Every write in this contract calls `extend_ttl` so events and tickets don't silently expire from storage; see `LEDGER_BUMP`/`LEDGER_THRESHOLD` in `lib.rs` and the full policy in [`docs/STORAGE_TTL.md`](docs/STORAGE_TTL.md). |
 | **`stellar` CLI** | The official command-line tool for building, deploying, and invoking Soroban contracts. | Every command in this README is run through it. |
 
 ## Why one contract for every industry
@@ -161,6 +161,11 @@ enum, so callers get a typed, stable error code rather than a panic string:
 | 12 | `InvalidPrice` | Negative price, or zero on a listing that requires > 0 |
 | 13 | `InvalidRoyalty` | `royalty_bps` above 10,000 (100%) |
 
+Those are the codes most integrators hit first; the enum runs to 34.
+For the **full** table — every code, which entry points return it, and
+whether a backend should retry it — see
+[`docs/ERRORS.md`](docs/ERRORS.md), which is the canonical reference.
+
 ## Getting started
 
 **Prerequisites:**
@@ -280,6 +285,10 @@ The [`docs/`](docs/README.md) directory goes deeper on specific topics:
 |---|---|
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How this contract fits into the wider system |
 | [`CONTRACT_API.md`](docs/CONTRACT_API.md) | Full function-by-function reference |
+| [`ERRORS.md`](docs/ERRORS.md) | Every error code, what returns it, and whether to retry |
+| [`STORAGE_TTL.md`](docs/STORAGE_TTL.md) | Storage TTL policy, archival behavior, and the keeper job |
+| [`INTEGRATION.md`](docs/INTEGRATION.md) | Integration guide for backend developers |
+| [`THREAT_MODEL.md`](docs/THREAT_MODEL.md) | Assets, trust boundaries, attacks and residual risks |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Production deployment notes |
 | [`EVENTS.md`](docs/EVENTS.md) | On-chain event schema for indexers |
 | [`GAS_AND_FEES.md`](docs/GAS_AND_FEES.md) | Soroban fee model as it applies here |

@@ -26,6 +26,7 @@ this is a quick-reference summary.
 
 ## Error codes
 
-See the `Error` enum in `lib.rs` for the full list; each variant maps
-to a specific precondition failure (e.g. `AlreadyUsed`, `NotOwner`,
-`ResalePriceExceedsCap`).
+See [`ERRORS.md`](ERRORS.md) for the full table of every `Error` variant
+(1–34), which entry points return each one, and whether it is worth
+retrying. The enum itself lives in
+[`contracts/ticketing/src/error.rs`](../contracts/ticketing/src/error.rs).

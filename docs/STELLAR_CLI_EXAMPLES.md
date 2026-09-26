@@ -533,26 +533,16 @@ stellar contract invoke --id <contract-id> \
 
 ## Error codes
 
-If a call fails, look up the error code in [`lib.rs`](../contracts/ticketing/src/lib.rs):
-
-| Code | Error | Meaning |
-|---|---|---|
-| 1 | `AlreadyInitialized` | `initialize` called more than once |
-| 2 | `NotInitialized` | Contract used before `initialize` |
-| 3 | `EventNotFound` | No event with that `event_id` |
-| 4 | `EventAlreadyExists` | `create_event` called twice with the same `event_id` |
-| 5 | `TicketNotFound` | No ticket with that `ticket_id` |
-| 6 | `NotOrganizer` | Caller isn't the event organizer |
-| 7 | `NotOwner` | Caller isn't the ticket owner |
-| 8 | `AlreadyUsed` | Action attempted on a checked-in ticket |
-| 9 | `Revoked` | Action attempted on a revoked ticket |
-| 10 | `NotForResale` | `cancel_resale`/`buy_resale` on a ticket not listed |
-| 11 | `ResalePriceExceedsCap` | Listing price exceeds the cap |
-| 12 | `InvalidPrice` | Negative price or zero on a listing |
-| 13 | `InvalidRoyalty` | `royalty_bps` > 10,000 (100%) |
+If a call fails, look up the error code in
+[`ERRORS.md`](ERRORS.md), which lists every `Error` variant (1–34),
+the entry points that return it, and whether it is worth retrying. The
+enum itself is in
+[`error.rs`](../contracts/ticketing/src/error.rs).
 
 ## More documentation
 
 - [`CONTRACT_API.md`](CONTRACT_API.md) — API reference (function signatures, inputs, outputs)
+- [`ERRORS.md`](ERRORS.md) — full error table and retry semantics
+- [`INTEGRATION.md`](INTEGRATION.md) — backend integration guide
 - [`README.md`](../README.md) — Project overview
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — Testnet setup and deployment walkthrough
