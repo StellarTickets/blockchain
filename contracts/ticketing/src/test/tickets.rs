@@ -570,3 +570,80 @@ fn verify_tickets_returns_all_tickets() {
     assert_eq!(results.get(0).unwrap().original_price, 1_000);
     assert_eq!(results.get(1).unwrap().original_price, 2_000);
 }
+
+#[test]
+fn check_in_requires_the_organizers_auth() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+        &1_000i128,
+    );
+
+    // Replace the blanket auth mock with one that authorizes only a stranger.
+    // The organizer address matches the event, but the organizer has not
+    // signed, so `require_auth` must fail before any state change.
+    let stranger = Address::generate(&env);
+    env.mock_auths(&[MockAuth {
+        address: &stranger,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "check_in",
+            args: (&organizer, ticket_id).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    let result = client.try_check_in(&organizer, &ticket_id);
+    // A host auth failure, not a contract Error such as NotOrganizer.
+    assert!(matches!(result, Err(Err(_))));
+    assert_eq!(client.verify_ticket(&ticket_id).status, TicketStatus::Valid);
+
+    // With the organizer's own auth the same call succeeds, and the
+    // recorded authorization belongs to the organizer.
+    env.mock_auths(&[MockAuth {
+        address: &organizer,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "check_in",
+            args: (&organizer, ticket_id).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.check_in(&organizer, &ticket_id);
+    let auths = env.auths();
+    assert_eq!(auths.len(), 1);
+    assert_eq!(auths[0].0, organizer);
+    assert_eq!(client.verify_ticket(&ticket_id).status, TicketStatus::Used);
+}
+
+/// Current behaviour: unlike `revoke_with_refund` (which rejects used
+/// tickets), `revoke_ticket` has no status guard, so an organizer may revoke
+/// a ticket that was already checked in and it becomes permanently Revoked.
+#[test]
+fn revoke_ticket_on_a_used_ticket_succeeds_and_marks_it_revoked() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+        &1_000i128,
+    );
+    client.check_in(&organizer, &ticket_id);
+    assert_eq!(client.verify_ticket(&ticket_id).status, TicketStatus::Used);
+
+    client.revoke_ticket(&organizer, &ticket_id);
+    assert_eq!(client.verify_ticket(&ticket_id).status, TicketStatus::Revoked);
+
+    // The ticket now reports Revoked rather than AlreadyUsed on re-entry.
+    let result = client.try_check_in(&organizer, &ticket_id);
+    assert_eq!(result, Err(Ok(Error::Revoked)));
+}
