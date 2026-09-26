@@ -123,6 +123,38 @@ fn purchase_primary_increments_tickets_issued() {
 }
 
 #[test]
+fn issue_ticket_and_purchase_primary_share_the_id_counter() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    let issued_owner = Address::generate(&env);
+    let first_buyer = Address::generate(&env);
+    let second_buyer = Address::generate(&env);
+
+    let first_issued = issue_sample_ticket(&env, &client, &organizer, 1, &issued_owner, 0);
+    let first_purchased = client.purchase_primary(
+        &first_buyer,
+        &1,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+        &0,
+    );
+    let second_issued = issue_sample_ticket(&env, &client, &organizer, 1, &issued_owner, 0);
+    let second_purchased = client.purchase_primary(
+        &second_buyer,
+        &1,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "2"),
+        &0,
+    );
+
+    assert_eq!(
+        [first_issued, first_purchased, second_issued, second_purchased],
+        [0, 1, 2, 3]
+    );
+}
+
+#[test]
 fn purchase_primary_allows_a_free_event() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
     make_event(&env, &client, &organizer, 1);
