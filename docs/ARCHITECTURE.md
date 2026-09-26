@@ -16,8 +16,11 @@ The `ticketing` contract uses three storage categories:
 Instance storage is cheap to read but expires with the contract
 instance's own TTL and isn't a good fit for data that individual
 ticket owners depend on staying alive independently of contract
-upgrades. Persistent storage entries are extended on every write
-(`extend_ttl`) so an active ticket never lapses.
+upgrades. Persistent storage entries are extended on every ticket write
+(`extend_ttl` in `save_ticket`) so an active ticket never lapses. Event
+records are extended when they are created; the full policy, the
+archival behavior, and the off-chain keepalive job that covers the rest
+are in [`STORAGE_TTL.md`](STORAGE_TTL.md).
 
 ## Authorization model
 
