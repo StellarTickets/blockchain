@@ -146,6 +146,24 @@ fn buy_resale_splits_royalty_and_transfers_ownership() {
 }
 
 #[test]
+fn buy_resale_does_not_increment_tickets_issued() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let ticket_id = issue_sample_ticket(&env, &client, &organizer, 1, &seller, 1_000);
+    let tickets_issued_before_resale = client.get_event(&1).tickets_issued;
+
+    client.list_for_resale(&seller, &ticket_id, &1_100);
+    token_asset.mint(&buyer, &1_100);
+    client.buy_resale(&buyer, &ticket_id);
+
+    assert_eq!(tickets_issued_before_resale, 1);
+    assert_eq!(client.get_event(&1).tickets_issued, tickets_issued_before_resale);
+}
+
+#[test]
 fn buy_resale_with_zero_royalty_pays_the_seller_in_full() {
     let (env, client, token, token_asset, _admin, organizer) = setup();
     client.create_event(
