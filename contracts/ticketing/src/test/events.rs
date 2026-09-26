@@ -414,3 +414,42 @@ fn per_event_payment_token_rejects_change_after_tickets_issued() {
     let err = client.try_set_event_payment_token(&organizer, &1, &Some(token2_contract.address()));
     assert_eq!(err, Err(Ok(Error::TicketsAlreadyIssued)));
 }
+
+#[test]
+fn create_event_accepts_a_royalty_of_exactly_10_000_bps() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    client.create_event(
+        &organizer,
+        &1,
+        &String::from_str(&env, "Event"),
+        &String::from_str(&env, "concert"),
+        &12_000u32,
+        &10_000u32, // exactly 100%: upper boundary is inclusive
+        &10_000u64,
+        &0u64,
+        &0u64,
+    );
+    assert_eq!(client.get_event(&1).royalty_bps, 10_000);
+}
+
+/// Current behaviour: a zero multiplier is accepted at creation, but it makes
+/// the resale cap 0, so every resale listing (price must be > 0) is rejected.
+#[test]
+fn zero_max_resale_multiplier_event_is_created_but_blocks_all_resale() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_custom_event(&env, &client, &organizer, 1, "Event", "concert", 0, 500, 10_000);
+    assert_eq!(client.get_event(&1).max_resale_multiplier_bps, 0);
+
+    let buyer = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+        &1_000i128,
+    );
+    let result = client.try_list_for_resale(&buyer, &ticket_id, &1i128);
+    assert_eq!(result, Err(Ok(Error::ResalePriceExceedsCap)));
+    assert_eq!(client.verify_ticket(&ticket_id).status, TicketStatus::Valid);
+}
