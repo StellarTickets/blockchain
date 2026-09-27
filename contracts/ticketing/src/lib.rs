@@ -195,7 +195,7 @@ impl TicketingContract {
             escrow_balance: 0,
             payment_token: None,
         };
-        env.storage().persistent().set(&key, &event);
+        Self::save_event(&env, event_id, &event);
         env.storage()
             .persistent()
             .set(&DataKey::TicketsIssued(event_id), &0u64);
@@ -205,9 +205,6 @@ impl TicketingContract {
             LEDGER_BUMP,
         );
         Self::increment_organizer_events(&env, &event.organizer);
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         Ok(())
     }
 
@@ -256,7 +253,7 @@ impl TicketingContract {
             escrow_balance: 0,
             payment_token: None,
         };
-        env.storage().persistent().set(&key, &event);
+        Self::save_event(&env, event_id, &event);
         env.storage()
             .persistent()
             .set(&DataKey::TicketsIssued(event_id), &0u64);
@@ -266,9 +263,6 @@ impl TicketingContract {
             LEDGER_BUMP,
         );
         Self::increment_organizer_events(&env, &event.organizer);
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         Ok(())
     }
 
@@ -343,9 +337,7 @@ impl TicketingContract {
         }
         event.escrow_enabled = true;
         event.escrow_release_ledger = escrow_release_ledger;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &event);
+        Self::save_event(&env, event_id, &event);
         Ok(())
     }
 
@@ -374,9 +366,7 @@ impl TicketingContract {
             Self::ensure_token_contract(&env, token)?;
         }
         event.payment_token = token;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &event);
+        Self::save_event(&env, event_id, &event);
         Ok(())
     }
 
@@ -448,9 +438,7 @@ impl TicketingContract {
         // `escrow_balance` stays at 0 in storage, `release_escrow` reads 0,
         // and every escrowed sale is stranded in the contract forever.
         if event.escrow_balance > 0 {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Event(event_id), &event);
+            Self::save_event(&env, event_id, &event);
         }
         Ok(ticket_id)
     }
@@ -474,9 +462,7 @@ impl TicketingContract {
         }
         let amount = event.escrow_balance;
         event.escrow_balance = 0;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &event);
+        Self::save_event(&env, event_id, &event);
         if amount > 0 {
             let token_client =
                 token::Client::new(&env, &Self::payment_token_for_event(&env, &event)?);
@@ -1038,6 +1024,21 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .set(&key, &count.saturating_add(1));
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Writes an event and refreshes its TTL in the same step.
+    ///
+    /// Every write to an `Event` must go through here. `storage().set` on its
+    /// own leaves the entry's `live_until_ledger` exactly where it was, so a
+    /// path that updates an event without extending it leaves the event --
+    /// and every ticket that can only be resolved through it -- sitting on
+    /// the expiry it happened to be created with (issue #139).
+    fn save_event(env: &Env, event_id: u64, event: &Event) {
+        let key = DataKey::Event(event_id);
+        env.storage().persistent().set(&key, event);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
