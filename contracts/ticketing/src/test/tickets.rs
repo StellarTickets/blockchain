@@ -413,6 +413,32 @@ fn check_in_marks_used_and_rejects_reentry() {
     assert_eq!(result, Err(Ok(Error::AlreadyUsed)));
 }
 
+/// Issue #131: scanning in a ticket that is listed for resale must clear the
+/// listing price. The ticket is now `Used` and can never be bought, so a
+/// leftover `resale_price` is stale state that `get_ticket` still reports.
+#[test]
+fn check_in_clears_a_pending_resale_listing() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+        &1_000i128,
+    );
+    client.list_for_resale(&buyer, &ticket_id, &1_100i128);
+    assert_eq!(client.get_ticket(&ticket_id).resale_price, 1_100);
+
+    client.check_in(&organizer, &ticket_id);
+
+    let ticket = client.get_ticket(&ticket_id);
+    assert_eq!(ticket.status, TicketStatus::Used);
+    assert_eq!(ticket.resale_price, 0);
+}
+
 #[test]
 fn check_in_rejects_the_wrong_organizer() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
@@ -460,6 +486,46 @@ fn check_in_batch_marks_all_tickets_used() {
     client.check_in_batch(&organizer, &batch);
     assert_eq!(client.get_ticket(&t1).status, TicketStatus::Used);
     assert_eq!(client.get_ticket(&t2).status, TicketStatus::Used);
+}
+
+/// Issue #131: the batch path clears listings too, not just `check_in`.
+#[test]
+fn check_in_batch_clears_pending_resale_listings() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let buyer = Address::generate(&env);
+    let t1 = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+        &1_000i128,
+    );
+    let t2 = client.issue_ticket(
+        &organizer,
+        &1,
+        &buyer,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "2"),
+        &1_000i128,
+    );
+    // Only the first ticket is listed; the second stays unlisted. Both must
+    // come back with a cleared price.
+    client.list_for_resale(&buyer, &t1, &1_100i128);
+    assert_eq!(client.get_ticket(&t1).resale_price, 1_100);
+
+    let mut batch = Vec::new(&env);
+    batch.push_back(t1);
+    batch.push_back(t2);
+
+    client.check_in_batch(&organizer, &batch);
+
+    for ticket_id in [t1, t2] {
+        let ticket = client.get_ticket(&ticket_id);
+        assert_eq!(ticket.status, TicketStatus::Used);
+        assert_eq!(ticket.resale_price, 0);
+    }
 }
 
 #[test]
