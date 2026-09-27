@@ -724,6 +724,12 @@ impl TicketingContract {
             _ => {}
         }
         ticket.status = TicketStatus::Used;
+        // A checked-in ticket can never be bought, so a listing left over from
+        // before the scan is dead state. Clear it the way every other path
+        // out of `Resale` does (`cancel_resale`, `buy_resale`, `transfer_*`,
+        // `claim_gift`) so `get_ticket` never reports a price for a ticket
+        // that cannot be purchased (issue #131).
+        ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
         Self::save_ticket(&env, ticket_id, &ticket);
         TicketCheckedIn {
@@ -757,6 +763,8 @@ impl TicketingContract {
                 _ => {}
             }
             ticket.status = TicketStatus::Used;
+            // See `check_in`: clear the stale listing (issue #131).
+            ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
             TicketCheckedIn {
