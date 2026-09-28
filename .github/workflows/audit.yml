@@ -24,7 +24,7 @@ jobs:
         run: cargo audit
       - name: Open issue when audit fails
         if: failure() && github.event_name == 'schedule'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const title = 'Scheduled cargo-audit failure';
