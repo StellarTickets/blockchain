@@ -141,6 +141,7 @@ making it easier to satisfy `price >= floor`).
 
 - `resale_listing_rejects_prices_above_cap`
 - `resale_price_exactly_at_the_face_value_cap_is_allowed`
+- `resale_cap_boundary_with_rounding_truncates_down`
 - `buy_resale_splits_royalty_and_transfers_ownership`
 - `buy_resale_with_zero_royalty_pays_the_seller_in_full`
 - `list_for_resale_after_cancel_succeeds_and_allows_purchase` (shows 57 royalty on 1150 = 5%)

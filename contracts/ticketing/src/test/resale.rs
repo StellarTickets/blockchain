@@ -652,3 +652,65 @@ fn cancel_resale_by_non_owner() {
     let result = client.try_cancel_resale(&non_owner, &ticket_id);
     assert_eq!(result, Err(Ok(Error::NotOwner)));
 }
+
+/// Issue #140: When `original_price * max_resale_multiplier_bps` is not evenly
+/// divisible by 10_000, integer division truncates toward zero (rounds down).
+/// Verify boundary: `cap` is accepted, while `cap + 1` is rejected.
+#[test]
+fn resale_cap_boundary_with_rounding_truncates_down() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+
+    // Test cases with odd prices / bps where product % 10_000 != 0:
+    // (event_id, original_price, max_resale_multiplier_bps, expected_cap)
+    let cases = [
+        (10u64, 101i128, 11_000u32, 111i128), // 101 * 1.10 = 111.1 -> 111
+        (20u64, 1_001i128, 12_000u32, 1_201i128), // 1001 * 1.20 = 1201.2 -> 1201
+        (30u64, 333i128, 12_500u32, 416i128), // 333 * 1.25 = 416.25 -> 416
+        (40u64, 99i128, 13_333u32, 131i128),  // 99 * 1.3333 = 131.9967 -> 131
+        (50u64, 7i128, 12_000u32, 8i128),     // 7 * 1.20 = 8.4 -> 8
+    ];
+
+    for (event_id, original_price, multiplier_bps, expected_cap) in cases {
+        assert_ne!(
+            (original_price * multiplier_bps as i128) % 10_000,
+            0,
+            "test case must have non-zero remainder"
+        );
+        assert_eq!(
+            original_price * multiplier_bps as i128 / 10_000,
+            expected_cap
+        );
+
+        make_custom_event(
+            &env,
+            &client,
+            &organizer,
+            event_id,
+            "Rounding Event",
+            "concert",
+            multiplier_bps,
+            500,
+            10_000,
+        );
+
+        let owner = Address::generate(&env);
+        let ticket_id = client.issue_ticket(
+            &organizer,
+            &event_id,
+            &owner,
+            &String::from_str(&env, "GA"),
+            &String::from_str(&env, "1"),
+            &original_price,
+        );
+
+        // Cap + 1 must be rejected
+        let too_high = client.try_list_for_resale(&owner, &ticket_id, &(expected_cap + 1));
+        assert_eq!(too_high, Err(Ok(Error::ResalePriceExceedsCap)));
+
+        // Exactly at truncated cap must succeed
+        client.list_for_resale(&owner, &ticket_id, &expected_cap);
+        let ticket = client.get_ticket(&ticket_id);
+        assert_eq!(ticket.status, TicketStatus::Resale);
+        assert_eq!(ticket.resale_price, expected_cap);
+    }
+}

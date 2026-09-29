@@ -76,6 +76,22 @@ pub enum Error {
     TransferLimitExceeded = 33,
     /// The resale price is below the event's configured resale floor.
     ResalePriceBelowFloor = 34,
+    /// The event has no primary sale price configured for the requested tier.
+    TierPriceNotSet = 35,
+    /// The resale multiplier is below the 10_000 bps face-value floor.
+    InvalidMultiplier = 36,
+    /// The supplied name or category is empty.
+    EmptyNameOrCategory = 37,
+    /// The supplied name, category, tier or seat exceeds its maximum length.
+    StringTooLong = 38,
+    /// A ticket cannot be transferred to its current owner.
+    SelfTransfer = 39,
+    /// The seller cannot buy their own resale listing.
+    SelfPurchase = 40,
+    /// The caller is not on the admin-managed organizer allowlist.
+    OrganizerNotApproved = 41,
+    /// The ticket is listed for resale and cannot be checked in until cancelled.
+    ResaleListingActive = 42,
     /// A stored ticket lifecycle word contains an unknown status code.
-    InvalidTicketLifecycle = 35,
+    InvalidTicketLifecycle = 43,
 }

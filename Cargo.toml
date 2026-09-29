@@ -6,6 +6,7 @@ members = [
 
 [workspace.dependencies]
 soroban-sdk = "28"
+proptest = { version = "1.6", default-features = false, features = ["std"] }
 
 [profile.release]
 opt-level = "z"

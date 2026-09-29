@@ -91,6 +91,29 @@ impl TicketingContract {
         }
     }
 
+    fn validate_label(label: &String, max_len: u32) -> Result<(), Error> {
+        let len = label.len();
+        if len == 0 {
+            return Err(Error::EmptyNameOrCategory);
+        }
+        if len > max_len {
+            return Err(Error::StringTooLong);
+        }
+        Ok(())
+    }
+
+    /// Event metadata validation: non-empty, length-bounded name and category.
+    fn validate_event_labels(name: &String, category: &String) -> Result<(), Error> {
+        Self::validate_label(name, MAX_NAME_LEN)?;
+        Self::validate_label(category, MAX_CATEGORY_LEN)
+    }
+
+    /// Ticket label validation: non-empty, length-bounded tier and seat.
+    fn validate_ticket_labels(tier: &String, seat: &String) -> Result<(), Error> {
+        Self::validate_label(tier, MAX_TICKET_LABEL_LEN)?;
+        Self::validate_label(seat, MAX_TICKET_LABEL_LEN)
+    }
+
     /// Step one of a payment token change: the admin proposes a new token,
     /// which can only be applied after `PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS`.
     /// A new proposal replaces any pending one. Proceeds already held in
@@ -216,6 +239,7 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_initialized(&env)?;
+        Self::require_approved_organizer(&env, &organizer)?;
         if royalty_bps > 10_000 {
             return Err(Error::InvalidRoyalty);
         }
@@ -286,6 +310,7 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_initialized(&env)?;
+        Self::require_approved_organizer(&env, &organizer)?;
         if royalty_bps > 10_000 {
             return Err(Error::InvalidRoyalty);
         }
@@ -548,9 +573,10 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         buyer.require_auth();
         Self::require_initialized(&env)?;
-        if price < 0 {
-            return Err(Error::InvalidPrice);
-        }
+        // Issue #126: bound tier/seat so they cannot inflate per-ticket
+        // storage cost and rent. Validated before the throttle and the tier
+        // price lookup so an oversized label is rejected on its own terms.
+        Self::validate_ticket_labels(&tier, &seat)?;
         Self::enforce_purchase_throttle(&env, &buyer)?;
         let mut event = Self::get_event_inner(&env, event_id)?;
         let price = Self::tier_price(&env, event_id, &tier)?;
@@ -804,7 +830,6 @@ impl TicketingContract {
     /// new integrations should call `get_ticket`.
     #[deprecated(note = "use get_ticket; verify_ticket is retained for ABI compatibility")]
     pub fn verify_ticket(env: Env, ticket_id: u64) -> Result<Ticket, Error> {
-        Self::extend_instance_ttl(&env);
         Self::require_initialized(&env)?;
         Self::get_ticket_inner(&env, ticket_id)
     }
@@ -813,7 +838,6 @@ impl TicketingContract {
     /// entry. Missing tickets return `false` so scanners can use this as a
     /// single boolean check without handling a contract error.
     pub fn is_valid(env: Env, ticket_id: u64, owner: Address) -> bool {
-        Self::extend_instance_ttl(&env);
         match Self::get_ticket_inner(&env, ticket_id) {
             Ok(ticket) => ticket.owner == owner && ticket.status == TicketStatus::Valid,
             Err(_) => false,
@@ -824,7 +848,6 @@ impl TicketingContract {
     /// Allows scanners to inspect multiple tickets in one call.
     /// Bounded by `MAX_BATCH_SIZE`.
     pub fn verify_tickets(env: Env, ticket_ids: Vec<u64>) -> Result<Vec<Ticket>, Error> {
-        Self::extend_instance_ttl(&env);
         Self::require_initialized(&env)?;
         if ticket_ids.is_empty() {
             return Err(Error::EmptyBatch);
@@ -842,6 +865,14 @@ impl TicketingContract {
     /// Marks a ticket as used at the point of entry. Only the event's
     /// organizer (or their delegated gate device, via a shared Soroban
     /// signer) may check a ticket in, and only once.
+    ///
+    /// Tickets listed for resale (`TicketStatus::Resale`) cannot be checked in
+    /// until the owner cancels the listing (`cancel_resale`) or completes the sale
+    /// (issue #132).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::ResaleListingActive` if the ticket is currently listed for resale.
     pub fn check_in(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
@@ -853,14 +884,10 @@ impl TicketingContract {
         match ticket.status {
             TicketStatus::Used => return Err(Error::AlreadyUsed),
             TicketStatus::Revoked => return Err(Error::Revoked),
+            TicketStatus::Resale => return Err(Error::ResaleListingActive),
             _ => {}
         }
         ticket.status = TicketStatus::Used;
-        // A checked-in ticket can never be bought, so a listing left over from
-        // before the scan is dead state. Clear it the way every other path
-        // out of `Resale` does (`cancel_resale`, `buy_resale`, `transfer_*`,
-        // `claim_gift`) so `get_ticket` never reports a price for a ticket
-        // that cannot be purchased (issue #131).
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
         Self::save_ticket(&env, ticket_id, &ticket);
@@ -874,6 +901,12 @@ impl TicketingContract {
 
     /// Marks a batch of tickets as used at the point of entry for group admission.
     /// Only the event's organizer may check tickets in, bounded by `MAX_BATCH_SIZE`.
+    ///
+    /// Tickets listed for resale (`TicketStatus::Resale`) are rejected (issue #132).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::ResaleListingActive` if any ticket in the batch is currently listed for resale.
     pub fn check_in_batch(env: Env, organizer: Address, ticket_ids: Vec<u64>) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
@@ -892,10 +925,10 @@ impl TicketingContract {
             match ticket.status {
                 TicketStatus::Used => return Err(Error::AlreadyUsed),
                 TicketStatus::Revoked => return Err(Error::Revoked),
+                TicketStatus::Resale => return Err(Error::ResaleListingActive),
                 _ => {}
             }
             ticket.status = TicketStatus::Used;
-            // See `check_in`: clear the stale listing (issue #131).
             ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
@@ -911,6 +944,10 @@ impl TicketingContract {
     /// Fraud prevention: organizer voids a ticket (chargeback, counterfeit
     /// report, policy violation). Revoked tickets can never be transferred,
     /// resold, or checked in again.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::Revoked` if the ticket has already been revoked.
     pub fn revoke_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
@@ -918,6 +955,9 @@ impl TicketingContract {
         let event = Self::get_event_inner(&env, ticket.event_id)?;
         if event.organizer != organizer {
             return Err(Error::NotOrganizer);
+        }
+        if ticket.status == TicketStatus::Revoked {
+            return Err(Error::Revoked);
         }
         ticket.status = TicketStatus::Revoked;
         // A revoked ticket must not keep a live resale asking price (issue
@@ -957,6 +997,10 @@ impl TicketingContract {
     /// token before the ticket is voided — the revocation remains
     /// permanent afterwards. Without a refund, behavior matches
     /// `revoke_ticket`. Revoking a used ticket is rejected either way.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::Revoked` if the ticket has already been revoked.
     pub fn revoke_with_refund(
         env: Env,
         organizer: Address,
@@ -973,6 +1017,9 @@ impl TicketingContract {
         if ticket.status == TicketStatus::Used {
             return Err(Error::AlreadyUsed);
         }
+        if ticket.status == TicketStatus::Revoked {
+            return Err(Error::Revoked);
+        }
         if refund && ticket.original_price > 0 {
             let token_client =
                 token::Client::new(&env, &Self::payment_token_for_event(&env, &event)?);
@@ -986,6 +1033,10 @@ impl TicketingContract {
 
     /// Mass revocation of tickets by the event organizer (chargeback, policy violation).
     /// Bounded by `MAX_BATCH_SIZE`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::Revoked` if any ticket in the batch has already been revoked.
     pub fn revoke_batch(env: Env, organizer: Address, ticket_ids: Vec<u64>) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
@@ -1001,6 +1052,9 @@ impl TicketingContract {
             if event.organizer != organizer {
                 return Err(Error::NotOrganizer);
             }
+            if ticket.status == TicketStatus::Revoked {
+                return Err(Error::Revoked);
+            }
             ticket.status = TicketStatus::Revoked;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
@@ -1009,8 +1063,10 @@ impl TicketingContract {
     }
 
     /// Lists an owned, valid ticket on the resale marketplace. The price is
-    /// capped at the event's `max_resale_multiplier_bps` of the original
-    /// sale price to curb scalping.
+    /// capped at `original_price * max_resale_multiplier_bps / 10_000` using
+    /// integer division (truncating toward zero / rounding down). When the
+    /// intermediate product is not evenly divisible by 10_000, fractional
+    /// amounts round down so the effective cap never exceeds the nominal cap.
     pub fn list_for_resale(
         env: Env,
         owner: Address,
@@ -1164,7 +1220,6 @@ impl TicketingContract {
     ///
     /// Returns `Error::EventNotFound` when no event with `event_id` exists.
     pub fn get_event(env: Env, event_id: u64) -> Result<Event, Error> {
-        Self::extend_instance_ttl(&env);
         Self::require_initialized(&env)?;
         Self::get_event_inner(&env, event_id)
     }
@@ -1175,7 +1230,6 @@ impl TicketingContract {
     ///
     /// Returns `Error::TicketNotFound` when no ticket with `ticket_id` exists.
     pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, Error> {
-        Self::extend_instance_ttl(&env);
         Self::require_initialized(&env)?;
         Self::get_ticket_inner(&env, ticket_id)
     }
@@ -1221,7 +1275,6 @@ impl TicketingContract {
             .persistent()
             .get(&key)
             .ok_or(Error::TicketNotFound)?;
-        Self::bump_ticket_ttl(env, ticket_id)?;
         Self::unpack_ticket(stored)
     }
 

@@ -20,6 +20,7 @@ mod event_labels;
 mod events;
 pub mod helpers;
 mod organizer_allowlist;
+mod proptests;
 mod resale;
 mod resale_multiplier;
 mod self_transfer;

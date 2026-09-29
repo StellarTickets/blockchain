@@ -38,6 +38,11 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      - name: Proptest
+        env:
+          PROPTEST_CASES: 64
+        run: cargo test --workspace prop
+
   build-wasm:
     runs-on: ubuntu-latest
     needs: test

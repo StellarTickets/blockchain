@@ -70,6 +70,8 @@ diagnostic transaction.
 | 39 | `SelfTransfer` | `transfer_ticket` was called with `from == to` |
 | 40 | `SelfPurchase` | `buy_resale` was called by the ticket's current `owner` (the seller buying their own listing) |
 | 41 | `OrganizerNotApproved` | `create_event` / `create_event_with_options` was called by an organizer the admin has not added with `approve_organizer` (see [ORGANIZER_ALLOWLIST.md](ORGANIZER_ALLOWLIST.md)) |
+| 42 | `ResaleListingActive` | The ticket is listed for resale and cannot be checked in until cancelled |
+| 43 | `InvalidTicketLifecycle` | A stored ticket lifecycle word contains an unknown status code |
 
 ### Grouping
 
@@ -78,7 +80,7 @@ diagnostic transaction.
 | Initialization & ordering | 1, 2, 4, 18, 30, 31, 32 | Initialization, idempotency and sequencing constraints — rejected without touching ticket state |
 | Lookup | 3, 5 | The referenced record does not exist in persistent storage |
 | Authorization | 6, 7, 17, 41 | The signer is authenticated but lacks the required role for the record |
-| Ticket state machine | 8, 9, 10, 33, 39, 40 | The ticket's `status` or transfer counter forbids the action, or the transfer/purchase is a no-op on the current owner |
+| Ticket state machine | 8, 9, 10, 33, 39, 40, 42, 43 | The ticket's `status` or transfer counter forbids the action, or the transfer/purchase is a no-op on the current owner |
 | Policy, pricing & timing | 11, 12, 13, 19, 20, 21, 22, 34, 35, 36 | Organizer-configured or time-based policy rejects the arguments |
 | Gift claims | 23, 24, 25, 26 | The claim link is missing, expired, or the preimage does not match |
 | Batching | 27, 28 | `Vec` arity is outside `1..=MAX_BATCH_SIZE` |
@@ -100,7 +102,7 @@ are reachable from a "not found" or a role check.
 | 6 | every organizer-authorized entry point |
 | 7 | every owner-authorized entry point |
 | 8 | `transfer_ticket`, `transfer_batch`, `create_gift_claim`, `claim_gift`, `check_in`, `check_in_batch`, `revoke_with_refund` |
-| 9 | `transfer_ticket`, `transfer_batch`, `create_gift_claim`, `claim_gift`, `check_in`, `check_in_batch`, `set_seat` |
+| 9 | `transfer_ticket`, `transfer_batch`, `create_gift_claim`, `claim_gift`, `check_in`, `check_in_batch`, `set_seat`, `revoke_ticket`, `revoke_with_refund`, `revoke_batch` |
 
 | Entry point | Error codes it can return |
 |---|---|
@@ -123,12 +125,12 @@ are reachable from a "not found" or a role check.
 | `claim_gift` | 3, 5, 7, 8, 9, 20, 23, 24, 25, 33 |
 | `get_ticket` / `verify_ticket` (deprecated) | 5 |
 | `verify_tickets` | 5, 27, 28 |
-| `check_in` | 3, 5, 6, 8, 9 |
-| `check_in_batch` | 3, 5, 6, 8, 9, 27, 28 |
-| `revoke_ticket` | 3, 5, 6 |
+| `check_in` | 3, 5, 6, 8, 9, 42 |
+| `check_in_batch` | 3, 5, 6, 8, 9, 27, 28, 42 |
+| `revoke_ticket` | 3, 5, 6, 9 |
 | `set_seat` | 3, 5, 6, 9 |
-| `revoke_with_refund` | 2, 3, 5, 6, 8 |
-| `revoke_batch` | 3, 5, 6, 27, 28 |
+| `revoke_with_refund` | 2, 3, 5, 6, 8, 9 |
+| `revoke_batch` | 3, 5, 6, 9, 27, 28 |
 | `list_for_resale` | 3, 5, 7, 8, 9, 11, 12, 21, 34 |
 | `cancel_resale` | 5, 7, 10 |
 | `buy_resale` | 2, 3, 5, 10, 21, 33 |
@@ -151,7 +153,7 @@ condition is **permanent** or **time/balance dependent**:
 
 | Class | Codes | Retry strategy |
 |---|---|---|
-| Permanent — fix the request | 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 19, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 34 | Do not retry automatically; return a 4xx-equivalent to the caller |
+| Permanent — fix the request | 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 19, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43 | Do not retry automatically; return a 4xx-equivalent to the caller |
 | Time-dependent — retry after waiting | 15, 16, 20, 21, 31 | Retry when the relevant timestamp or ledger sequence has passed |
 | Transient operational | 1, 2, 14, 18 | Deployment or configuration error; retrying the same arguments will not help |
 
