@@ -131,7 +131,7 @@ pub enum Error {
     /// The max uses is zero, or below the number of uses already recorded (issue #74).
     InvalidMaxUses = 60,
     /// The ticket's tier may not enter the zone being checked in at (issue #80).
-    ZoneNotAllowed = 61,
+    ZoneNotAllowed = 66,
     /// Too many zones, or a zone label is empty or too long (issue #80).
     InvalidZones = 62,
     /// The primary sale has not opened yet (issue #94).
