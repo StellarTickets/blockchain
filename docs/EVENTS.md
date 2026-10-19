@@ -55,3 +55,5 @@ that need every owner change must still read them from `owner_of`.
 | `PaymentTokenProposed` | `propose_payment_token` | `admin` (topic), `new_token`, `apply_after_ledger` |
 | `PaymentTokenChanged` | `apply_payment_token` | `admin` (topic), `old_token`, `new_token` |
 | `ContractUpgraded` | `upgrade` | `admin` (topic), `new_wasm_hash` (see [UPGRADES.md](UPGRADES.md)) |
+| `AdminProposed` | `propose_admin` | `admin` (topic), `new_admin` |
+| `AdminTransferred` | `accept_admin` | `old_admin` (topic), `new_admin` |

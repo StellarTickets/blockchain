@@ -106,3 +106,21 @@ pub struct ContractUpgraded {
     pub admin: Address,
     pub new_wasm_hash: BytesN<32>,
 }
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin nominates a new admin with `propose_admin` (issue #100).
+pub struct AdminProposed {
+    #[topic]
+    pub admin: Address,
+    pub new_admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the pending admin accepts with `accept_admin` (issue #100).
+pub struct AdminTransferred {
+    #[topic]
+    pub old_admin: Address,
+    pub new_admin: Address,
+}

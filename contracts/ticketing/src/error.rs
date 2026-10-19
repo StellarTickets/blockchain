@@ -142,4 +142,8 @@ pub enum Error {
     InvalidSaleWindow = 65,
     /// A gift claim already exists for the ticket and has not yet been claimed or expired.
     GiftClaimAlreadyExists = 61,
+    /// No admin transfer is pending, so there is nothing to accept (issue #100).
+    NoPendingAdmin = 67,
+    /// The caller is not the admin named by the pending transfer (issue #100).
+    NotPendingAdmin = 68,
 }

@@ -17,9 +17,9 @@ pub use constants::{
 use constants::{LEDGER_BUMP, LEDGER_THRESHOLD};
 pub use error::Error;
 pub use events::{
-    ContractInitialized, ContractUpgraded, EventCancelled, OrganizerApproved, OrganizerRevoked,
-    PaymentTokenChanged, PaymentTokenProposed, PurchaseThrottleUpdated, TicketCheckedIn,
-    TicketIssued, TicketTransferred,
+    AdminProposed, AdminTransferred, ContractInitialized, ContractUpgraded, EventCancelled,
+    OrganizerApproved, OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed,
+    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketTransferred,
 };
 pub use types::{
     Category, DataKey, Event, EventParams, GiftClaim, PendingPaymentToken, StoredTicket, Ticket,
@@ -2604,6 +2604,53 @@ impl TicketingContract {
         ContractUpgraded {
             admin,
             new_wasm_hash,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Step one of an admin transfer (issue #100): the current admin nominates
+    /// `new_admin`. Nothing changes until the nominee calls `accept_admin`. A
+    /// new proposal replaces any pending one.
+    pub fn propose_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+        AdminProposed { admin, new_admin }.publish(&env);
+        Ok(())
+    }
+
+    /// Step two of an admin transfer (issue #100): the nominee accepts and
+    /// becomes the admin. The nominee's auth is required, so the admin role
+    /// cannot be pushed onto an address that never agreed to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NoPendingAdmin` when no transfer is pending, and
+    /// `Error::NotPendingAdmin` when `new_admin` is not the nominee.
+    pub fn accept_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        new_admin.require_auth();
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .ok_or(Error::NoPendingAdmin)?;
+        if pending != new_admin {
+            return Err(Error::NotPendingAdmin);
+        }
+        let old_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        AdminTransferred {
+            old_admin,
+            new_admin,
         }
         .publish(&env);
         Ok(())

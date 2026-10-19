@@ -13,6 +13,7 @@ use soroban_sdk::{
     Address, Bytes, Env, IntoVal, String, Vec,
 };
 
+mod admin_transfer;
 mod auth;
 mod auth_matrix;
 mod batch_issuance;

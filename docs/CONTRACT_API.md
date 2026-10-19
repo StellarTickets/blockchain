@@ -72,6 +72,8 @@ clients do not break. It may be removed only in a future breaking deployment.
 | `total_tickets()` | anyone | Returns the number of tickets ever issued across all events (issue #114). Never decreases, including for revoked, used or burned tickets. |
 | `token_decimals()` | anyone | Returns decimals cached for the active payment token. |
 | `version()` | anyone | Returns the contract build's semver string from `Cargo.toml` (issue #102). |
+| `propose_admin(admin, new_admin)` | `admin` | Nominates `new_admin` as the next admin. Nothing changes until the nominee accepts. A new proposal replaces the pending one (issue #100). |
+| `accept_admin(new_admin)` | `new_admin` | Completes an admin transfer. Only the pending nominee may call it (issue #100). |
 | `upgrade(admin, new_wasm_hash)` | `admin` | Replaces the contract WASM with an already-uploaded build; storage is kept. Publishes `ContractUpgraded`. See [UPGRADES.md](UPGRADES.md) (issue #101). |
 
 ## Batch operation atomicity

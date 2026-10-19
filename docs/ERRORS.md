@@ -89,6 +89,8 @@ diagnostic transaction.
 | 60 | `InvalidMaxUses` | `set_ticket_max_uses` was given zero, or a value below the ticket's recorded uses (issue #74) |
 | 61 | `GiftClaimAlreadyExists` | `create_gift_claim` was called while a claim for the ticket is still active (not yet claimed or expired) |
 | 66 | `ZoneNotAllowed` | `check_in_at_zone` was called for a zone the ticket's tier may not enter (issue #80). Moved from `61` when it collided with `GiftClaimAlreadyExists`; `61` keeps its original, earlier meaning |
+| 67 | `NoPendingAdmin` | `accept_admin` was called with no admin transfer pending (issue #100) |
+| 68 | `NotPendingAdmin` | `accept_admin` was called by an address other than the pending nominee (issue #100) |
 
 ### Grouping
 

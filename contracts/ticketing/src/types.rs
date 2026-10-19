@@ -308,6 +308,9 @@ pub enum DataKey {
     /// Presence marks an address allowed to check tickets in for an event on
     /// the organizer's behalf, e.g. a gate device (issue #89).
     CheckInSigner(u64, Address),
+    /// Admin nominated by `propose_admin`, who takes over once they call
+    /// `accept_admin` (issue #100). Absent when no transfer is pending.
+    PendingAdmin,
 }
 
 // Keep the persistent encoding beside the public and stored ticket types.
