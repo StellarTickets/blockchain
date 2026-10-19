@@ -57,3 +57,4 @@ that need every owner change must still read them from `owner_of`.
 | `ContractUpgraded` | `upgrade` | `admin` (topic), `new_wasm_hash` (see [UPGRADES.md](UPGRADES.md)) |
 | `AdminProposed` | `propose_admin` | `admin` (topic), `new_admin` |
 | `AdminTransferred` | `accept_admin` | `old_admin` (topic), `new_admin` |
+| `PlatformFeeUpdated` | `set_platform_fee` | `admin` (topic), `fee_bps`, `recipient` |

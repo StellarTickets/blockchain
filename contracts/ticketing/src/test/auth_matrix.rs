@@ -668,3 +668,17 @@ fn accept_admin_requires_auth() {
         client.try_accept_admin(&new_admin)
     );
 }
+
+#[test]
+fn set_platform_fee_requires_auth() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let platform = Address::generate(&env);
+
+    assert_requires_auth!(
+        env,
+        client,
+        &admin,
+        "set_platform_fee",
+        client.try_set_platform_fee(&admin, &250, &platform)
+    );
+}

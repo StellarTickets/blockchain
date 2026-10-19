@@ -146,4 +146,7 @@ pub enum Error {
     NoPendingAdmin = 67,
     /// The caller is not the admin named by the pending transfer (issue #100).
     NotPendingAdmin = 68,
+    /// The platform fee exceeds 100%, or the fee plus an event's royalty would
+    /// exceed 100% of the resale price (issue #103).
+    InvalidPlatformFee = 69,
 }

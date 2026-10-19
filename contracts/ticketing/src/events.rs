@@ -124,3 +124,13 @@ pub struct AdminTransferred {
     pub old_admin: Address,
     pub new_admin: Address,
 }
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin sets the platform fee on resales (issue #103).
+pub struct PlatformFeeUpdated {
+    #[topic]
+    pub admin: Address,
+    pub fee_bps: u32,
+    pub recipient: Address,
+}

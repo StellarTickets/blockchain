@@ -19,11 +19,11 @@ pub use error::Error;
 pub use events::{
     AdminProposed, AdminTransferred, ContractInitialized, ContractUpgraded, EventCancelled,
     OrganizerApproved, OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketTransferred,
+    PlatformFeeUpdated, PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketTransferred,
 };
 pub use types::{
-    Category, DataKey, Event, EventParams, GiftClaim, PendingPaymentToken, StoredTicket, Ticket,
-    TicketRecipient, TicketStatus,
+    Category, DataKey, Event, EventParams, GiftClaim, PendingPaymentToken, PlatformFee,
+    StoredTicket, Ticket, TicketRecipient, TicketStatus,
 };
 
 use soroban_sdk::{
@@ -269,6 +269,11 @@ impl TicketingContract {
         if params.royalty_bps > 10_000 {
             return Err(Error::InvalidRoyalty);
         }
+        // Issue #103: the royalty and the platform fee together cannot take more
+        // than the whole resale price.
+        if params.royalty_bps + Self::platform_fee_bps(&env) > BPS_DENOMINATOR {
+            return Err(Error::InvalidRoyalty);
+        }
         // Issue #124: a multiplier below face value (10_000 bps) makes every
         // resale impossible — `list_for_resale` computes the cap as
         // `original_price * max_resale_multiplier_bps / 10_000`, which lands
@@ -311,6 +316,7 @@ impl TicketingContract {
             cancelled: false,
             royalty_splits: None,
         };
+        Self::record_royalty_bps(&env, event.royalty_bps);
         Self::save_event(&env, event_id, &event);
         env.storage()
             .persistent()
@@ -1776,12 +1782,10 @@ impl TicketingContract {
         let token_address = Self::payment_token_for_event(&env, &event)?;
 
         // --- effects: settle state before any untrusted external call. ---
-        let royalty_product = ticket
-            .resale_price
-            .checked_mul(event.royalty_bps as i128)
-            .ok_or(Error::MathOverflow)?;
-        let royalty = royalty_product / BPS_DENOMINATOR as i128;
-        let seller_amount = ticket.resale_price - royalty;
+        let fee_config = Self::platform_fee_config(&env);
+        let fee_bps = fee_config.as_ref().map_or(0, |fee| fee.bps);
+        let (royalty, platform_fee, seller_amount) =
+            Self::resale_split(&event, ticket.resale_price, fee_bps)?;
         let seller = ticket.owner.clone();
         Self::move_owner_balance(&env, ticket_id, &seller, &buyer);
         ticket.owner = buyer.clone();
@@ -1796,6 +1800,11 @@ impl TicketingContract {
         if royalty > 0 {
             Self::pay_royalty(&token_client, &buyer, &event, royalty)?;
         }
+        if platform_fee > 0 {
+            if let Some(fee) = &fee_config {
+                token_client.transfer(&buyer, &fee.recipient, &platform_fee);
+            }
+        }
         if seller_amount > 0 {
             token_client.transfer(&buyer, &seller, &seller_amount);
         }
@@ -1805,6 +1814,8 @@ impl TicketingContract {
     /// Returns a read-only quote for resale settlement: `(price, royalty, seller_amount)`.
     ///
     /// Matches the calculation in `buy_resale` without modifying any state.
+    /// `seller_amount` is net of the platform fee (issue #103), so the fee
+    /// itself is `price - royalty - seller_amount`.
     ///
     /// # Errors
     ///
@@ -1819,12 +1830,8 @@ impl TicketingContract {
             return Err(Error::NotForResale);
         }
         let event = Self::get_event_inner(&env, ticket.event_id)?;
-        let royalty_product = ticket
-            .resale_price
-            .checked_mul(event.royalty_bps as i128)
-            .ok_or(Error::MathOverflow)?;
-        let royalty = royalty_product / BPS_DENOMINATOR as i128;
-        let seller_amount = ticket.resale_price - royalty;
+        let fee_bps = Self::platform_fee_bps(&env);
+        let (royalty, _, seller_amount) = Self::resale_split(&event, ticket.resale_price, fee_bps)?;
         Ok((ticket.resale_price, royalty, seller_amount))
     }
 
@@ -2654,6 +2661,89 @@ impl TicketingContract {
         }
         .publish(&env);
         Ok(())
+    }
+
+    /// Sets the platform fee taken from every resale (issue #103). The fee
+    /// comes out of the seller's proceeds, is paid to `recipient` on each
+    /// resale, and sits alongside the organizer royalty. Zero turns it off.
+    ///
+    /// The fee plus the highest royalty of any event created so far must not
+    /// exceed 100% of the resale price, so a resale never pays out more than
+    /// it collected.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidPlatformFee` when `fee_bps` exceeds 10_000, or
+    /// when `fee_bps` plus the highest event royalty exceeds 10_000.
+    pub fn set_platform_fee(
+        env: Env,
+        admin: Address,
+        fee_bps: u32,
+        recipient: Address,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        if fee_bps > BPS_DENOMINATOR || fee_bps + Self::max_royalty_bps(&env) > BPS_DENOMINATOR {
+            return Err(Error::InvalidPlatformFee);
+        }
+        env.storage().instance().set(
+            &DataKey::PlatformFee,
+            &PlatformFee {
+                bps: fee_bps,
+                recipient: recipient.clone(),
+            },
+        );
+        PlatformFeeUpdated {
+            admin,
+            fee_bps,
+            recipient,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// The configured platform fee, or `None` when none has been set.
+    pub fn platform_fee(env: Env) -> Option<PlatformFee> {
+        Self::platform_fee_config(&env)
+    }
+
+    fn platform_fee_config(env: &Env) -> Option<PlatformFee> {
+        env.storage().instance().get(&DataKey::PlatformFee)
+    }
+
+    fn platform_fee_bps(env: &Env) -> u32 {
+        Self::platform_fee_config(env).map_or(0, |fee| fee.bps)
+    }
+
+    fn max_royalty_bps(env: &Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::MaxRoyaltyBps)
+            .unwrap_or(0)
+    }
+
+    /// Raises the recorded highest royalty when a new event exceeds it, so
+    /// `set_platform_fee` can bound the fee against every event.
+    fn record_royalty_bps(env: &Env, royalty_bps: u32) {
+        if royalty_bps > Self::max_royalty_bps(env) {
+            env.storage()
+                .instance()
+                .set(&DataKey::MaxRoyaltyBps, &royalty_bps);
+        }
+    }
+
+    /// Splits a resale price into `(royalty, platform_fee, seller_amount)`.
+    /// The royalty and the fee are each rounded down, and the seller keeps the
+    /// remainder, so the three parts always sum to `price`.
+    fn resale_split(event: &Event, price: i128, fee_bps: u32) -> Result<(i128, i128, i128), Error> {
+        let royalty = Self::bps_of(price, event.royalty_bps)?;
+        let platform_fee = Self::bps_of(price, fee_bps)?;
+        Ok((royalty, platform_fee, price - royalty - platform_fee))
+    }
+
+    fn bps_of(amount: i128, bps: u32) -> Result<i128, Error> {
+        let product = amount.checked_mul(bps as i128).ok_or(Error::MathOverflow)?;
+        Ok(product / BPS_DENOMINATOR as i128)
     }
 
     fn payment_token(env: &Env) -> Result<Address, Error> {

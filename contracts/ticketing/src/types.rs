@@ -223,6 +223,17 @@ pub struct PendingPaymentToken {
     pub apply_after_ledger: u32,
 }
 
+/// Platform fee taken from every resale and paid to `recipient` out of the
+/// seller's proceeds, alongside the organizer royalty (issue #103).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformFee {
+    /// Share of each resale price, in basis points.
+    pub bps: u32,
+    /// Address that receives the fee.
+    pub recipient: Address,
+}
+
 /// Storage keys for all contract state.
 #[contracttype]
 #[derive(Clone)]
@@ -311,6 +322,12 @@ pub enum DataKey {
     /// Admin nominated by `propose_admin`, who takes over once they call
     /// `accept_admin` (issue #100). Absent when no transfer is pending.
     PendingAdmin,
+    /// Platform fee taken from every resale (issue #103). Absent until the
+    /// admin sets one, which means no fee.
+    PlatformFee,
+    /// Highest `royalty_bps` of any event created so far (issue #103). Bounds
+    /// the platform fee, so the fee plus any event's royalty stays within 100%.
+    MaxRoyaltyBps,
 }
 
 // Keep the persistent encoding beside the public and stored ticket types.

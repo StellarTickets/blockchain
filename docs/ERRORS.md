@@ -5,8 +5,8 @@ Every fallible entry point of the `ticketing` contract returns
 [`contracts/ticketing/src/error.rs`](../contracts/ticketing/src/error.rs)
 with an explicit `#[repr(u32)]` discriminant, so every variant has a
 **stable numeric code** that integrators can branch on. The enum runs
-from `1` to `34` with no gaps — code `0` is never produced by this
-contract.
+from `1` to `69`, with a few numbers unused — code `0` is never produced by
+this contract.
 
 This page is the canonical error reference. Where another document shows
 a shorter list, this one wins.
@@ -91,6 +91,7 @@ diagnostic transaction.
 | 66 | `ZoneNotAllowed` | `check_in_at_zone` was called for a zone the ticket's tier may not enter (issue #80). Moved from `61` when it collided with `GiftClaimAlreadyExists`; `61` keeps its original, earlier meaning |
 | 67 | `NoPendingAdmin` | `accept_admin` was called with no admin transfer pending (issue #100) |
 | 68 | `NotPendingAdmin` | `accept_admin` was called by an address other than the pending nominee (issue #100) |
+| 69 | `InvalidPlatformFee` | `set_platform_fee` was given a fee above 10000 bps, or a fee that plus the highest event royalty exceeds 10000 bps (issue #103). `create_event` reports a royalty that plus the current fee exceeds 10000 bps as `InvalidRoyalty` |
 
 ### Grouping
 

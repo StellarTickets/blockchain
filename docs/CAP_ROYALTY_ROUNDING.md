@@ -84,8 +84,11 @@ let seller_amount = ticket.resale_price - royalty;
 - The effective royalty is **always ≤** the nominal percentage.
 - For small `resale_price` values or small `royalty_bps`, the royalty can
   round down to zero (e.g., 1100 at 1 bps → 0 royalty).
-- `seller_amount` is **always** `resale_price - royalty`, so the split
-  never exceeds the listing price and no value is lost to rounding.
+- `seller_amount` is **always** `resale_price - royalty - platform_fee`, so the
+  split never exceeds the listing price and no value is lost to rounding. With
+  no platform fee set, `platform_fee` is zero and this reduces to
+  `resale_price - royalty`. The fee is rounded down the same way as the
+  royalty (issue #103).
 
 ### Off-chain replication (TypeScript)
 

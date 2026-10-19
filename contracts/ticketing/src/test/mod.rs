@@ -33,6 +33,7 @@ mod organizer_allowlist;
 mod organizer_listing;
 mod owner_history;
 mod owner_index;
+mod platform_fee;
 mod proptests;
 mod reentry;
 mod resale;
