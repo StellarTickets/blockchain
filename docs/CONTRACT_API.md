@@ -71,6 +71,7 @@ clients do not break. It may be removed only in a future breaking deployment.
 | `tickets_of(owner, start, limit)` | anyone | Returns one page of the ticket ids an address holds, in any status (issue #111). `limit` is clamped to 50. Order is not chronological, since removals move the last entry into the freed slot. Use `balance(owner)` for the count; the issue's `balance_of` name is not added, per the SEP-50 decision above. |
 | `total_tickets()` | anyone | Returns the number of tickets ever issued across all events (issue #114). Never decreases, including for revoked, used or burned tickets. |
 | `token_decimals()` | anyone | Returns decimals cached for the active payment token. |
+| `version()` | anyone | Returns the contract build's semver string from `Cargo.toml` (issue #102). |
 
 ## Batch operation atomicity
 

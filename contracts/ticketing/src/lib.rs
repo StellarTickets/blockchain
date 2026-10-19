@@ -2576,6 +2576,13 @@ impl TicketingContract {
             .ok_or(Error::NotInitialized)
     }
 
+    /// Version of the contract build, taken from the crate's `Cargo.toml` at
+    /// compile time (issue #102). Consumers read it to tell which build is
+    /// deployed before relying on newer entry points.
+    pub fn version(env: Env) -> String {
+        String::from_str(&env, env!("CARGO_PKG_VERSION"))
+    }
+
     fn payment_token(env: &Env) -> Result<Address, Error> {
         env.storage()
             .instance()

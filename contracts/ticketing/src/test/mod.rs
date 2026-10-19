@@ -51,5 +51,6 @@ mod tier_zones;
 mod total_tickets;
 mod transfer_controls;
 mod ttl;
+mod version;
 
 pub use helpers::*;
