@@ -6,6 +6,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- Resolve a duplicate error discriminant: `ZoneNotAllowed` moves from `61`
+  to `66`, since `61` was already `GiftClaimAlreadyExists`. The crate could
+  not compile with both.
 - Repair merged organizer approval and packed ticket lookup definitions, and
   update a stale event-creation test so the contract builds again.
 
@@ -18,6 +21,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   for the dependency versioning policy and upgrade procedure.
 
 ### Added
+- Contract version: `version()` returns the crate version from `Cargo.toml`
+  (#102).
+- Admin-only upgrade: `upgrade(admin, new_wasm_hash)` replaces the contract
+  code and keeps storage. See [docs/UPGRADES.md](docs/UPGRADES.md) for the
+  procedure and state migration rules (#101).
+- Two-step admin transfer: `propose_admin` nominates a successor and
+  `accept_admin` completes the handover, which needs the nominee's auth
+  (#100).
+- Platform fee on resales: `set_platform_fee(admin, fee_bps, recipient)` takes
+  a share of each resale from the seller's proceeds, paid to `recipient`.
+  Fee plus any event royalty may not exceed 10000 bps (`InvalidPlatformFee`).
+  `quote_resale` now reports a `seller_amount` net of the fee. `platform_fee`
+  reads the setting (#103).
 - Multi-use tickets (passes): `set_ticket_max_uses` sets how many entries a
   ticket allows (default 1). `check_in` and `check_in_batch` count each entry,
   and a ticket becomes `Used` only once its uses are exhausted. `pass_out`
