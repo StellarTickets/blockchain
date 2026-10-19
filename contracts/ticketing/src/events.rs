@@ -1,7 +1,7 @@
 //! Contract events emitted by the ticketing contract.
 #![allow(missing_docs)]
 
-use soroban_sdk::{contractevent, Address, String};
+use soroban_sdk::{contractevent, Address, BytesN, String};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,4 +96,13 @@ pub struct TicketTransferred {
     pub ticket_id: u64,
     pub from: Address,
     pub to: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin replaces the contract WASM with `upgrade` (issue #101).
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
 }

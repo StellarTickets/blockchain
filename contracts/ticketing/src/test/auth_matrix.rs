@@ -625,3 +625,17 @@ fn burn_used_ticket_requires_auth() {
         client.try_burn_used_ticket(&organizer, &ticket_id)
     );
 }
+
+#[test]
+fn upgrade_requires_auth() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let new_hash = super::upgrade::upload_second_wasm(&env);
+
+    assert_requires_auth!(
+        env,
+        client,
+        &admin,
+        "upgrade",
+        client.try_upgrade(&admin, &new_hash)
+    );
+}

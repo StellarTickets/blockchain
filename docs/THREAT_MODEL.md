@@ -30,7 +30,7 @@ Ranked by what an attacker wants:
                                       │
         ┌─────────────────────────────┴─────────────────────────────┐
         │                  ticketing contract (WASM)                │
-        │   immutable, no upgrade, no pause, no admin override      │
+        │   admin-upgradeable (code only), no pause, no override    │
         └───────┬──────────────────────────────────┬───────────────┘
                 │ SEP-41 calls                    │ reads
                 ▼                                  ▼
@@ -159,10 +159,11 @@ The last row has one documented exception, described under
 
 Accepted, documented, and not mitigated by the current design:
 
-1. **No upgrade, no pause, no emergency stop.** A discovered bug means
-   a new deployment and a data migration. Recovery time is bounded by
-   the migration job, not by the contract. This is a deliberate
-   trade-off ([`UPGRADES.md`](UPGRADES.md)).
+1. **Admin upgrade key, no pause, no emergency stop.** The admin can
+   replace the contract code with `upgrade` and so can change the rules
+   for existing tickets. A bug that needs more than a code change still
+   means a data migration. Upgrades follow the procedure and the state
+   rules in [`UPGRADES.md`](UPGRADES.md).
 2. **Unilateral organizer revocation.** An organizer can void any ticket
    in their event at any time, including after check-in-adjacent
    activity, and `revoke_with_refund` is optional. There is no on-chain

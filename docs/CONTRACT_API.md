@@ -72,6 +72,7 @@ clients do not break. It may be removed only in a future breaking deployment.
 | `total_tickets()` | anyone | Returns the number of tickets ever issued across all events (issue #114). Never decreases, including for revoked, used or burned tickets. |
 | `token_decimals()` | anyone | Returns decimals cached for the active payment token. |
 | `version()` | anyone | Returns the contract build's semver string from `Cargo.toml` (issue #102). |
+| `upgrade(admin, new_wasm_hash)` | `admin` | Replaces the contract WASM with an already-uploaded build; storage is kept. Publishes `ContractUpgraded`. See [UPGRADES.md](UPGRADES.md) (issue #101). |
 
 ## Batch operation atomicity
 

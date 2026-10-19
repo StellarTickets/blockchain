@@ -17,15 +17,18 @@ pub use constants::{
 use constants::{LEDGER_BUMP, LEDGER_THRESHOLD};
 pub use error::Error;
 pub use events::{
-    ContractInitialized, EventCancelled, OrganizerApproved, OrganizerRevoked, PaymentTokenChanged,
-    PaymentTokenProposed, PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketTransferred,
+    ContractInitialized, ContractUpgraded, EventCancelled, OrganizerApproved, OrganizerRevoked,
+    PaymentTokenChanged, PaymentTokenProposed, PurchaseThrottleUpdated, TicketCheckedIn,
+    TicketIssued, TicketTransferred,
 };
 pub use types::{
     Category, DataKey, Event, EventParams, GiftClaim, PendingPaymentToken, StoredTicket, Ticket,
     TicketRecipient, TicketStatus,
 };
 
-use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
+use soroban_sdk::{
+    contract, contractimpl, token, Address, Bytes, BytesN, ContractExecutable, Env, String, Vec,
+};
 
 /// # Authorization ordering (issue #206)
 ///
@@ -2581,6 +2584,29 @@ impl TicketingContract {
     /// deployed before relying on newer entry points.
     pub fn version(env: Env) -> String {
         String::from_str(&env, env!("CARGO_PKG_VERSION"))
+    }
+
+    /// Replaces this contract's WASM with `new_wasm_hash` (issue #101). The
+    /// new code must already be on the ledger. Admin only.
+    ///
+    /// Only the code changes. Stored keys and value layouts stay as they are,
+    /// so a new build must still read existing state or ship a migration. See
+    /// [docs/UPGRADES.md](../../docs/UPGRADES.md) for the rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotAdmin` when `admin` is not the stored admin.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        env.deployer()
+            .update_current_contract(ContractExecutable::Wasm(new_wasm_hash.clone()));
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
+        Ok(())
     }
 
     fn payment_token(env: &Env) -> Result<Address, Error> {
