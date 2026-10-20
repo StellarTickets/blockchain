@@ -32,6 +32,11 @@ clients do not break. It may be removed only in a future breaking deployment.
 | `issue_ticket_with_metadata(organizer, event_id, to, tier, seat, price, metadata_uri)` | `organizer` | Mints a ticket like `issue_ticket` and attaches an optional metadata URI of at most 256 bytes (issue #109). |
 | `set_tier_price(organizer, event_id, tier, price)` | `organizer` | Sets the primary-sale price for an event tier. |
 | `get_tier_price(event_id, tier)` | anyone | Reads the configured primary-sale price for an event tier. |
+| `set_tier_perks(organizer, event_id, tier, perks)` | `organizer` | Attaches VIP perk labels (e.g. "lounge access") to a tier. At most `MAX_TIER_PERKS` (16) labels of 1–64 bytes; an empty list removes them. Informational only (issue #68). |
+| `tier_perks(event_id, tier)` | anyone | Perks attached to a tier; empty when none (issue #68). |
+| `set_event_metadata(organizer, event_id, key, value)` | `organizer` | Sets or overwrites one custom metadata entry. Keys are 1–32 bytes, values 1–256 bytes, and the map holds at most `MAX_EVENT_METADATA_ENTRIES` (16) keys (issue #70). |
+| `remove_event_metadata(organizer, event_id, key)` | `organizer` | Removes one custom metadata entry; a missing key is a no-op (issue #70). |
+| `event_metadata(event_id)` | anyone | The event's custom metadata as a `Map<String, String>`; empty when none (issue #70). |
 | `purchase_primary(buyer, event_id, tier, seat)` | `buyer` | Pays the configured tier price and atomically mints a ticket. |
 | `release_escrow(organizer, event_id)` | `organizer` | Releases an ended event's escrowed proceeds to its organizer. |
 | `set_purchase_throttle(admin, min_ledger_spacing)` | `admin` | Sets the minimum ledger spacing between a buyer's primary purchases. |
@@ -52,6 +57,8 @@ clients do not break. It may be removed only in a future breaking deployment.
 | `set_ticket_max_uses(organizer, ticket_id, max_uses)` | `organizer` | Sets how many entries a ticket allows before it is fully used. Defaults to 1. Zero, or a value below the recorded uses, is rejected (issue #74). |
 | `ticket_max_uses(ticket_id)` | anyone | Number of entries a ticket allows (issue #74). |
 | `ticket_used_count(ticket_id)` | anyone | Number of entries recorded against a ticket (issue #74). |
+| `set_ticket_validity(organizer, ticket_id, valid_from, valid_until)` | `organizer` | Limits check-in for one ticket to `[valid_from, valid_until]` (both inclusive, both optional), e.g. the days of a multi-day pass. `None` for both removes the window (issue #72). |
+| `ticket_validity(ticket_id)` | anyone | The ticket's `(valid_from, valid_until)` window; `(None, None)` when unrestricted (issue #72). |
 | `set_seat(organizer, ticket_id, seat)` | `organizer` | Reassigns a ticket's seat before transfer/check-in restrictions apply. |
 | `revoke_with_refund(organizer, ticket_id, refund)` | `organizer` | Revokes a ticket and optionally refunds its original price. |
 | `revoke_batch(organizer, ticket_ids)` | `organizer` | Atomically revokes a bounded batch of tickets. |

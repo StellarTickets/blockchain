@@ -169,25 +169,27 @@ pub enum Error {
     /// The spender is not the operator approved for the ticket (issue #107).
     NotApproved = 84,
     /// The payment token cannot change while resale bids or offers are held (issues #105, #106).
-    ResaleFundsOutstanding = 73,
+    ResaleFundsOutstanding = 85,
     /// The ticket's tier may not enter the zone being checked in at (issue #80).
-    ZoneNotAllowed = 74,
+    ZoneNotAllowed = 86,
     /// Too many zones, or a zone label is empty or too long (issue #80).
-    InvalidZones = 75,
+    InvalidZones = 87,
     /// The primary sale has not opened yet (issue #94).
-    SaleNotStarted = 76,
+    SaleNotStarted = 88,
     /// The primary sale has closed (issue #94).
-    SaleEnded = 77,
+    SaleEnded = 89,
     /// The sale window ends at or before it starts (issue #94).
-    InvalidSaleWindow = 78,
-    /// The contract is paused by the admin, so state-changing entry points are rejected.
-    ContractPaused = 79,
-    /// The ticket has already been refunded through `refund_primary`.
-    AlreadyRefunded = 80,
-    /// The event has no refund window, or the ticket's refund window has elapsed.
-    RefundWindowExpired = 81,
-    /// The buyer is not on the event's presale allowlist during the presale window.
-    NotOnAllowlist = 82,
-    /// The wallet has already purchased the event's maximum per-wallet tickets.
-    PurchaseLimitExceeded = 83,
+    InvalidSaleWindow = 90,
+    /// The ticket's validity window has not opened yet (issue #72).
+    TicketNotYetValid = 91,
+    /// The ticket's validity window has closed (issue #72).
+    TicketValidityEnded = 92,
+    /// The validity window ends at or before it starts (issue #72).
+    InvalidValidityWindow = 93,
+    /// Too many perks, or a perk label is empty or too long (issue #68).
+    InvalidPerks = 94,
+    /// An event metadata key or value is empty or too long (issue #70).
+    InvalidEventMetadata = 95,
+    /// The event already holds `MAX_EVENT_METADATA_ENTRIES` metadata entries (issue #70).
+    EventMetadataFull = 96,
 }

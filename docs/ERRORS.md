@@ -112,6 +112,12 @@ diagnostic transaction.
 | 81 | `RefundWindowExpired` | `refund_primary` was called after the event's refund window elapsed, or the event set no refund window |
 | 82 | `NotOnAllowlist` | A presale purchase was attempted by a wallet that is not on the event's allowlist |
 | 83 | `PurchaseLimitExceeded` | A primary purchase would exceed the event's optional `max_per_wallet` cap |
+| 91 | `TicketNotYetValid` | Check-in was attempted before the ticket's `valid_from` (issue #72) |
+| 92 | `TicketValidityEnded` | Check-in was attempted after the ticket's `valid_until` (issue #72) |
+| 93 | `InvalidValidityWindow` | `set_ticket_validity` was given a `valid_until` that is not after `valid_from` (issue #72) |
+| 94 | `InvalidPerks` | `set_tier_perks` was given more than `MAX_TIER_PERKS` perks, or a perk label is empty or longer than `MAX_PERK_LEN` (issue #68) |
+| 95 | `InvalidEventMetadata` | `set_event_metadata` was given an empty or over-long key or value (issue #70) |
+| 96 | `EventMetadataFull` | `set_event_metadata` would add a key to an event that already holds `MAX_EVENT_METADATA_ENTRIES` entries (issue #70) |
 
 ### Grouping
 

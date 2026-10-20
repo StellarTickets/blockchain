@@ -126,7 +126,9 @@ stellar contract invoke --id <contract-id> --network mainnet \
 4. Reissue affected tickets on the new contract (backend migration job)
 5. Document the incident and root cause
 
-There is no pause or upgrade mechanism; contracts are immutable once deployed.
+There is no upgrade mechanism; contracts are immutable once deployed. The
+admin can `pause` the contract to freeze state while migrating. The full
+migration runbook is in [`DISASTER_RECOVERY.md`](DISASTER_RECOVERY.md).
 
 ## References
 

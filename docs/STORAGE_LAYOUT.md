@@ -49,6 +49,8 @@ An entry that is never touched again after its last extension survives
 | `TierCapacity(id, tier)` | `u64` | `set_tier_capacity` | removed when capacity is cleared |
 | `TierZones(id, tier)` | `Vec<String>` | `set_tier_zones` | removed when the zone list is emptied |
 | `SaleWindow(id)` | `(Option<u64>, Option<u64>)` | `set_event_sale_window` | removed when both bounds are cleared |
+| `TierPerks(id, tier)` | `Vec<String>` | `set_tier_perks` | removed when the perk list is emptied |
+| `EventMetadata(id)` | `Map<String, String>` | `set_event_metadata`, `remove_event_metadata` | removed when the last entry is removed |
 | `AllowlistMember(id, addr)` | `bool` (presence) | `add_to_allowlist` | `remove_from_allowlist` |
 | `WalletPurchaseCount(id, addr)` | `u32` | `purchase_primary`, `refund_primary` | never |
 | `OrganizerEvents(org)` | `u32` | `create_event*` | never |
@@ -63,6 +65,7 @@ An entry that is never touched again after its last extension survives
 | `ReentryCount(id)` | `u32` | `pass_out` | never |
 | `MaxUses(id)` | `u32` | `set_ticket_max_uses` | `burn_used_ticket` |
 | `UsedCount(id)` | `u32` | `consume_use` | `burn_used_ticket` |
+| `TicketValidity(id)` | `(Option<u64>, Option<u64>)` | `set_ticket_validity` | removed when both bounds are cleared, `burn_used_ticket` |
 | `OwnerHistory(id)` | `Vec<Address>` | every ownership change via `record_previous_owner` | never |
 | `Auction(id)` | `Auction` | `start_auction`, `place_bid`, `extend_ticket_ttl` | `settle_auction`, `cancel_resale` |
 | `Offer(id, buyer)` | `Offer` | `make_offer` | `accept_offer`, `cancel_offer` |
@@ -138,6 +141,8 @@ Persistent storage (per-entry TTL, extended on write)
 ├── TierCapacity(id, tier)         → u64
 ├── TierZones(id, tier)            → Vec<String>
 ├── SaleWindow(id)                 → (Option<u64>, Option<u64>)
+├── TierPerks(id, tier)            → Vec<String>
+├── EventMetadata(id)              → Map<String, String>
 ├── AllowlistMember(id, addr)      → bool
 ├── WalletPurchaseCount(id, addr)  → u32
 ├── OrganizerEvents(org)           → u32
@@ -147,6 +152,7 @@ Persistent storage (per-entry TTL, extended on write)
 ├── ReentryCount(id)               → u32
 ├── MaxUses(id)                    → u32
 ├── UsedCount(id)                  → u32
+├── TicketValidity(id)             → (Option<u64>, Option<u64>)
 ├── OwnerHistory(id)               → Vec<Address>
 ├── Auction(id)                    → Auction
 ├── Offer(id, buyer)               → Offer

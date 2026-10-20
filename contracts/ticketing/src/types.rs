@@ -408,26 +408,16 @@ pub enum DataKey {
     /// Operator approved to move a ticket, keyed by ticket id (issue #107).
     /// Absent means no operator is approved.
     TicketApproval(u64),
-    /// Zones a tier may enter at check-in, keyed by event id and tier name
-    /// (issue #80). Absent means the tier is unrestricted.
-    TierZones(u64, String),
-    /// Presence marks a delegated check-in signer for an event (issue #89),
-    /// keyed by event id and signer address.
-    CheckInSigner(u64, Address),
-    /// Primary sale window `(sale_start, sale_end)` in ledger seconds for an
-    /// event (issue #94). Absent means the sale is always open.
-    SaleWindow(u64),
-    /// Bounded list of previous owners of a ticket, oldest first (issue #82).
-    /// The current owner is not included.
-    OwnerHistory(u64),
-    /// Contract-wide pause flag (instance storage). Absent means unpaused.
-    Paused,
-    /// Presence marks an allowlisted member for an event's presale window,
-    /// keyed by event id and member address.
-    AllowlistMember(u64, Address),
-    /// Number of primary purchases a wallet has made for an event, keyed by
-    /// event id and wallet address. Backs the optional `max_per_wallet` cap.
-    WalletPurchaseCount(u64, Address),
+    /// Perks attached to one of an event's tiers, e.g. "lounge access", keyed
+    /// by event id and tier name (issue #68). Absent means the tier has no perks.
+    TierPerks(u64, String),
+    /// Bounded custom metadata map for an event (issue #70). Stored apart from
+    /// `Event` so events without metadata pay no extra cost.
+    EventMetadata(u64),
+    /// Optional validity window `(valid_from, valid_until)` for a ticket, in
+    /// ledger seconds (issue #72). Absent means the ticket is valid whenever
+    /// the event allows check-in.
+    TicketValidity(u64),
 }
 
 // Keep the persistent encoding beside the public and stored ticket types.

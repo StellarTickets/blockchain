@@ -48,6 +48,22 @@ pub const MAX_PAGE_SIZE: u32 = 50;
 /// Most zones a tier can be restricted to (issue #80). Bounds the stored list.
 pub const MAX_TIER_ZONES: u32 = 16;
 
+/// Most perks a tier can carry (issue #68). Bounds the stored list.
+pub const MAX_TIER_PERKS: u32 = 16;
+
+/// Maximum accepted length, in bytes, for one tier perk label (issue #68).
+pub const MAX_PERK_LEN: u32 = 64;
+
+/// Most custom metadata entries an event can carry (issue #70). Bounds the
+/// stored map so reading it stays a fixed cost.
+pub const MAX_EVENT_METADATA_ENTRIES: u32 = 16;
+
+/// Maximum accepted length, in bytes, for an event metadata key (issue #70).
+pub const MAX_EVENT_METADATA_KEY_LEN: u32 = 32;
+
+/// Maximum accepted length, in bytes, for an event metadata value (issue #70).
+pub const MAX_EVENT_METADATA_VALUE_LEN: u32 = 256;
+
 /// Number of previous owners kept per ticket (issue #82). Older owners are
 /// dropped so a frequently traded ticket's history stays a fixed size.
 pub const MAX_OWNER_HISTORY: u32 = 5;
