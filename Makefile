@@ -1,4 +1,4 @@
-.PHONY: help test build fmt lint clean optimize check all
+.PHONY: help test build spec fmt lint clean optimize check all
 
 # Default target
 default: help
@@ -10,6 +10,7 @@ help:
 	@echo "  all        - Run all checks (fmt, lint, test, build)"
 	@echo "  test       - Run test suite"
 	@echo "  build      - Build contract WASM"
+	@echo "  spec       - Export the contract spec (JSON and XDR)"
 	@echo "  optimize   - Build and optimize contract WASM"
 	@echo "  fmt        - Format code with rustfmt"
 	@echo "  lint       - Run clippy lints"
@@ -21,6 +22,9 @@ test:
 
 build:
 	stellar contract build
+
+spec: build
+	scripts/export-spec.sh
 
 optimize: build
 	@WASM="target/wasm32v1-none/release/stellar_tickets_ticketing.wasm"; \
