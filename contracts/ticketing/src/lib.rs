@@ -183,6 +183,11 @@ impl TicketingContract {
         if outstanding_escrow > 0 {
             return Err(Error::EscrowNotEnabled);
         }
+        // Bids and offers are held in the active token, so they must settle or
+        // be refunded before the token can change (issues #105, #106).
+        if Self::resale_funds_outstanding(&env) > 0 {
+            return Err(Error::ResaleFundsOutstanding);
+        }
         let old_token = Self::payment_token(&env)?;
         // Capture the decimals of the token becoming active so clients always
         // see decimals matching the active payment token (issue #233).
@@ -954,10 +959,23 @@ impl TicketingContract {
         let price = Self::tier_price(&env, event_id, &tier)?;
         Self::reserve_tier_capacity(&env, event_id, &tier, 1)?;
         let token_client = token::Client::new(&env, &Self::payment_token_for_event(&env, &event)?);
-        if price > 0 {
+        // The platform fee goes to the admin straight from the buyer. The
+        // organizer's share is what escrow holds or the organizer receives, so
+        // the escrow total still matches the proceeds owed to the organizer (issue #104).
+        let fee = Self::platform_fee_on(&env, price)?;
+        let proceeds = price - fee;
+        if fee > 0 {
+            let admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .ok_or(Error::NotInitialized)?;
+            token_client.transfer(&buyer, &admin, &fee);
+        }
+        if proceeds > 0 {
             if event.escrow_enabled {
-                token_client.transfer(&buyer, env.current_contract_address(), &price);
-                event.escrow_balance += price;
+                token_client.transfer(&buyer, env.current_contract_address(), &proceeds);
+                event.escrow_balance += proceeds;
                 let current_escrow = env
                     .storage()
                     .instance()
@@ -965,12 +983,12 @@ impl TicketingContract {
                     .unwrap_or(0);
                 env.storage()
                     .instance()
-                    .set(&DataKey::OutstandingEscrow, &(current_escrow + price));
+                    .set(&DataKey::OutstandingEscrow, &(current_escrow + proceeds));
                 env.storage()
                     .persistent()
                     .set(&DataKey::Event(event_id), &event);
             } else {
-                token_client.transfer(&buyer, &event.organizer, &price);
+                token_client.transfer(&buyer, &event.organizer, &proceeds);
             }
         }
         let ticket_id = Self::mint(&env, event_id, buyer.clone(), tier, seat, price);
@@ -1046,6 +1064,35 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Sets the platform fee taken from every primary sale, in basis points of
+    /// the sale price (issue #104). `0` turns the fee off. The fee is paid to
+    /// the admin when a sale settles, and the organizer receives the rest.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidPlatformFee` when `fee_bps` is above 10_000.
+    pub fn set_platform_fee_bps(env: Env, admin: Address, fee_bps: u32) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        if fee_bps > BPS_DENOMINATOR {
+            return Err(Error::InvalidPlatformFee);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::PlatformFeeBps, &fee_bps);
+        PlatformFeeUpdated { admin, fee_bps }.publish(&env);
+        Ok(())
+    }
+
+    /// Platform fee in basis points taken from each primary sale (issue #104).
+    /// Zero when no fee has been set.
+    pub fn platform_fee_bps(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::PlatformFeeBps)
+            .unwrap_or(0)
+    }
+
     /// Direct, non-marketplace transfer (gift, family member, etc). Publishes
     /// `TicketTransferred` with the old and new owner (issue #115).
     pub fn transfer_ticket(
@@ -1063,31 +1110,7 @@ impl TicketingContract {
         if from == to {
             return Err(Error::SelfTransfer);
         }
-        let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
-        if ticket.owner != from {
-            return Err(Error::NotOwner);
-        }
-        Self::require_not_terminal(&ticket)?;
-        let event = Self::get_event_inner(&env, ticket.event_id)?;
-        Self::ensure_transferable(&event)?;
-        Self::ensure_transfer_allowed(&env, &ticket, &event)?;
-        if Self::transfer_frozen(&env, &event) {
-            return Err(Error::TransfersFrozen);
-        }
-        Self::move_owner_balance(&env, ticket_id, &ticket.owner, &to);
-        ticket.owner = to.clone();
-        ticket.transfers += 1;
-        ticket.status = TicketStatus::Valid;
-        ticket.resale_price = 0;
-        Self::remove_gift_claim(&env, ticket_id);
-        Self::save_ticket(&env, ticket_id, &ticket);
-        TicketTransferred {
-            ticket_id,
-            from,
-            to,
-        }
-        .publish(&env);
-        Ok(())
+        Self::transfer_owned_ticket(&env, ticket_id, &from, &to)
     }
 
     /// Direct, non-marketplace batch transfer of tickets to a single recipient.
@@ -1115,6 +1138,7 @@ impl TicketingContract {
                 return Err(Error::NotOwner);
             }
             Self::require_not_terminal(&ticket)?;
+            Self::ensure_no_auction(&env, ticket_id)?;
             let event = Self::get_event_inner(&env, ticket.event_id)?;
             if Self::transfer_frozen(&env, &event) {
                 return Err(Error::TransfersFrozen);
@@ -1160,6 +1184,7 @@ impl TicketingContract {
         Self::require_not_terminal(&ticket)?;
         let event = Self::get_event_inner(&env, ticket.event_id)?;
         Self::ensure_transferable(&event)?;
+        Self::ensure_no_auction(&env, ticket_id)?;
         if ticket.status == TicketStatus::Resale {
             ticket.status = TicketStatus::Valid;
             ticket.resale_price = 0;
@@ -1655,6 +1680,9 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .remove(&DataKey::UsedCount(ticket_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::TicketApproval(ticket_id));
         Self::remove_gift_claim(&env, ticket_id);
         Ok(())
     }
@@ -1687,20 +1715,8 @@ impl TicketingContract {
         if Self::resale_closed(&env, &event) {
             return Err(Error::ResaleClosed);
         }
-        let cap = Self::calculate_resale_cap(ticket.original_price, event.max_resale_multiplier_bps)?;
-        if price > cap {
-            return Err(Error::ResalePriceExceedsCap);
-        }
-        if let Some(floor_bps) = event.min_resale_multiplier_bps {
-            let floor_product = ticket
-                .original_price
-                .checked_mul(floor_bps as i128)
-                .ok_or(Error::MathOverflow)?;
-            let floor = floor_product / 10_000;
-            if price < floor {
-                return Err(Error::ResalePriceBelowFloor);
-            }
-        }
+        Self::ensure_resale_price_in_band(&ticket, &event, price)?;
+        Self::ensure_no_auction(&env, ticket_id)?;
         ticket.status = TicketStatus::Resale;
         ticket.resale_price = price;
         Self::remove_gift_claim(&env, ticket_id);
@@ -1762,6 +1778,20 @@ impl TicketingContract {
         if ticket.status != TicketStatus::Resale {
             return Err(Error::NotForResale);
         }
+        // An auction with bids is binding until it settles. One without bids
+        // can be withdrawn, since no funds are held for it (issue #105).
+        if let Some(auction) = env
+            .storage()
+            .persistent()
+            .get::<_, Auction>(&DataKey::Auction(ticket_id))
+        {
+            if auction.highest_bidder.is_some() {
+                return Err(Error::AuctionHasBids);
+            }
+            env.storage()
+                .persistent()
+                .remove(&DataKey::Auction(ticket_id));
+        }
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::save_ticket(&env, ticket_id, &ticket);
@@ -1818,6 +1848,8 @@ impl TicketingContract {
         if ticket.status != TicketStatus::Resale {
             return Err(Error::NotForResale);
         }
+        // A ticket in an auction is sold by the auction, not at a fixed price (issue #105).
+        Self::ensure_no_auction(&env, ticket_id)?;
         // Issue #128: a seller must not be able to buy their own listing,
         // which would move the ticket to itself, consume a transfer slot and
         // pay a royalty to the organizer for nothing.
@@ -1888,6 +1920,8 @@ impl TicketingContract {
         if ticket.status != TicketStatus::Resale {
             return Err(Error::NotForResale);
         }
+        // An auctioned ticket has no fixed price to quote (issue #105).
+        Self::ensure_no_auction(&env, ticket_id)?;
         let event = Self::get_event_inner(&env, ticket.event_id)?;
         let fee_bps = Self::platform_fee_bps(&env);
         let (royalty, _, seller_amount) = Self::resale_split(&event, ticket.resale_price, fee_bps)?;
@@ -1941,6 +1975,20 @@ impl TicketingContract {
             env.storage()
                 .persistent()
                 .extend_ttl(&uri_key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        }
+        // A running auction and any operator approval live under their own keys,
+        // so renew them with the ticket too (issues #105 and #107).
+        let auction_key = DataKey::Auction(ticket_id);
+        if env.storage().persistent().has(&auction_key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(&auction_key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        }
+        let approval_key = DataKey::TicketApproval(ticket_id);
+        if env.storage().persistent().has(&approval_key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(&approval_key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
         // The owner's balance counter is shared across that owner's tickets
         // and only written on ownership changes, so renew it here too. Without
@@ -2077,6 +2125,513 @@ impl TicketingContract {
             .persistent()
             .get(&DataKey::TicketMetadataUri(token_id))
             .ok_or(Error::MetadataUriNotSet)
+    }
+
+    /// Starts a timed auction for an owned, valid ticket (issue #105). Bids are
+    /// accepted until `ends_at`. The ticket stays in the resale state while the
+    /// auction runs, so it cannot be transferred, gifted, or bought at a fixed
+    /// price. `reserve_price` is the lowest accepted bid and must sit inside the
+    /// event's resale price band. `ends_at` must be in the future and no later
+    /// than the resale cutoff, so the auction settles while resale is open.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidPrice` for a non-positive reserve, `Error::NotOwner`
+    /// for a non-owner, `Error::AuctionActive` when an auction already runs,
+    /// `Error::ResaleListingActive` when the ticket has a fixed-price listing,
+    /// `Error::ResaleClosed` once the cutoff has passed, and
+    /// `Error::InvalidAuctionEnd` for an `ends_at` outside the allowed window.
+    pub fn start_auction(
+        env: Env,
+        owner: Address,
+        ticket_id: u64,
+        reserve_price: i128,
+        ends_at: u64,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        owner.require_auth();
+        if reserve_price <= 0 {
+            return Err(Error::InvalidPrice);
+        }
+        let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        if ticket.owner != owner {
+            return Err(Error::NotOwner);
+        }
+        Self::require_not_terminal(&ticket)?;
+        if Self::has_auction(&env, ticket_id) {
+            return Err(Error::AuctionActive);
+        }
+        if ticket.status == TicketStatus::Resale {
+            return Err(Error::ResaleListingActive);
+        }
+        let event = Self::get_event_inner(&env, ticket.event_id)?;
+        Self::ensure_not_cancelled(&event)?;
+        Self::ensure_transferable(&event)?;
+        if Self::resale_closed(&env, &event) {
+            return Err(Error::ResaleClosed);
+        }
+        Self::ensure_transfer_allowed(&env, &ticket, &event)?;
+        Self::ensure_resale_price_in_band(&ticket, &event, reserve_price)?;
+        let cutoff = event.starts_at.saturating_sub(event.resale_cutoff_seconds);
+        if ends_at <= env.ledger().timestamp() || ends_at > cutoff {
+            return Err(Error::InvalidAuctionEnd);
+        }
+
+        Self::remove_gift_claim(&env, ticket_id);
+        ticket.status = TicketStatus::Resale;
+        ticket.resale_price = 0;
+        Self::save_ticket(&env, ticket_id, &ticket);
+        let auction = Auction {
+            seller: owner.clone(),
+            reserve_price,
+            ends_at,
+            highest_bidder: None,
+            highest_bid: 0,
+        };
+        Self::save_auction(&env, ticket_id, &auction);
+        AuctionStarted {
+            ticket_id,
+            seller: owner,
+            reserve_price,
+            ends_at,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Places a bid on a running auction (issue #105). A bid must reach the
+    /// reserve, beat the current highest bid, and stay within the resale price
+    /// cap. The bid is escrowed in the contract, and the previous highest bidder
+    /// is refunded as soon as they are outbid. Bidding closes at `ends_at`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AuctionNotFound` when the ticket has no auction,
+    /// `Error::AuctionEnded` at or after `ends_at`, `Error::SelfPurchase` for the
+    /// seller, `Error::BidTooLow` when the bid does not beat the highest bid or
+    /// the reserve, and `Error::ResalePriceExceedsCap` above the cap.
+    pub fn place_bid(env: Env, bidder: Address, ticket_id: u64, amount: i128) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        bidder.require_auth();
+        let ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        Self::require_not_terminal(&ticket)?;
+        if ticket.status != TicketStatus::Resale {
+            return Err(Error::NotForResale);
+        }
+        let mut auction = Self::get_auction_inner(&env, ticket_id)?;
+        if env.ledger().timestamp() >= auction.ends_at {
+            return Err(Error::AuctionEnded);
+        }
+        if ticket.owner == bidder {
+            return Err(Error::SelfPurchase);
+        }
+        let event = Self::get_event_inner(&env, ticket.event_id)?;
+        Self::ensure_not_cancelled(&event)?;
+        let cap =
+            Self::calculate_resale_cap(ticket.original_price, event.max_resale_multiplier_bps)?;
+        if amount > cap {
+            return Err(Error::ResalePriceExceedsCap);
+        }
+        if amount < auction.reserve_price || amount <= auction.highest_bid {
+            return Err(Error::BidTooLow);
+        }
+        let token_address = Self::payment_token_for_event(&env, &event)?;
+
+        // --- effects: record the new high bid before any tokens move. ---
+        let outbid = auction
+            .highest_bidder
+            .clone()
+            .map(|previous| (previous, auction.highest_bid));
+        let refunded = outbid.as_ref().map_or(0, |(_, bid)| *bid);
+        auction.highest_bidder = Some(bidder.clone());
+        auction.highest_bid = amount;
+        Self::save_auction(&env, ticket_id, &auction);
+        Self::adjust_resale_funds(&env, amount - refunded);
+
+        // --- interactions: take the new bid, then refund the one it displaced. ---
+        let token_client = token::Client::new(&env, &token_address);
+        token_client.transfer(&bidder, env.current_contract_address(), &amount);
+        if let Some((previous, previous_bid)) = outbid {
+            token_client.transfer(&env.current_contract_address(), &previous, &previous_bid);
+        }
+        BidPlaced {
+            ticket_id,
+            bidder,
+            amount,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Settles an auction once bidding has closed (issue #105). Anyone may call
+    /// this after `ends_at`. The highest bidder receives the ticket, and the
+    /// contract pays the royalty and the seller's share out of the bid it holds.
+    /// With no bids the ticket goes back to valid. If the ticket was revoked
+    /// while the auction ran, the highest bid is refunded and the ticket stays
+    /// revoked.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AuctionNotFound` when the ticket has no auction, and
+    /// `Error::AuctionNotEnded` before `ends_at`.
+    pub fn settle_auction(env: Env, ticket_id: u64) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        let auction = Self::get_auction_inner(&env, ticket_id)?;
+        if env.ledger().timestamp() < auction.ends_at {
+            return Err(Error::AuctionNotEnded);
+        }
+        let event = Self::get_event_inner(&env, ticket.event_id)?;
+        let token_address = Self::payment_token_for_event(&env, &event)?;
+        let bid = auction.highest_bid;
+        let listed = ticket.status == TicketStatus::Resale;
+
+        // --- effects: close the auction and settle the ticket before any transfer. ---
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Auction(ticket_id));
+        Self::adjust_resale_funds(&env, -bid);
+        match &auction.highest_bidder {
+            Some(winner) if listed => {
+                let seller = ticket.owner.clone();
+                let (royalty, seller_amount) = Self::split_resale_price(&event, bid)?;
+                Self::move_owner_balance(&env, ticket_id, &seller, winner);
+                ticket.owner = winner.clone();
+                ticket.transfers += 1;
+                ticket.status = TicketStatus::Valid;
+                ticket.resale_price = 0;
+                Self::remove_gift_claim(&env, ticket_id);
+                Self::save_ticket(&env, ticket_id, &ticket);
+
+                // --- interactions: pay out from the bid the contract holds. ---
+                let token_client = token::Client::new(&env, &token_address);
+                let contract = env.current_contract_address();
+                if royalty > 0 {
+                    Self::pay_royalty(&token_client, &contract, &event, royalty)?;
+                }
+                if seller_amount > 0 {
+                    token_client.transfer(&contract, &seller, &seller_amount);
+                }
+                AuctionSettled {
+                    ticket_id,
+                    buyer: winner.clone(),
+                    amount: bid,
+                }
+                .publish(&env);
+            }
+            Some(bidder) => {
+                // Revoked while bidding ran: no ticket moves, so return the bid.
+                token::Client::new(&env, &token_address).transfer(
+                    &env.current_contract_address(),
+                    bidder,
+                    &bid,
+                );
+            }
+            None if listed => {
+                ticket.status = TicketStatus::Valid;
+                ticket.resale_price = 0;
+                Self::save_ticket(&env, ticket_id, &ticket);
+            }
+            None => {}
+        }
+        Ok(())
+    }
+
+    /// Reads the open auction for a ticket (issue #105).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AuctionNotFound` when the ticket has no open auction.
+    pub fn get_auction(env: Env, ticket_id: u64) -> Result<Auction, Error> {
+        Self::get_auction_inner(&env, ticket_id)
+    }
+
+    /// Makes an offer on a listed ticket (issue #106). The offer may sit below
+    /// or above the asking price, but it must stay inside the resale price band,
+    /// so it is capped at `max_resale_multiplier_bps` like any listing. The
+    /// amount is escrowed until the owner accepts it or it is cancelled. A buyer
+    /// holds at most one open offer per ticket.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidPrice` for a non-positive amount, `Error::NotForResale`
+    /// when the ticket is not listed, `Error::SelfPurchase` for the owner,
+    /// `Error::OfferAlreadyExists` when the buyer already has an offer,
+    /// `Error::ResaleClosed` once the cutoff has passed, and the price band
+    /// errors `Error::ResalePriceExceedsCap` and `Error::ResalePriceBelowFloor`.
+    pub fn make_offer(env: Env, buyer: Address, ticket_id: u64, amount: i128) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        buyer.require_auth();
+        if amount <= 0 {
+            return Err(Error::InvalidPrice);
+        }
+        let ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        if ticket.status != TicketStatus::Resale {
+            return Err(Error::NotForResale);
+        }
+        Self::ensure_no_auction(&env, ticket_id)?;
+        if ticket.owner == buyer {
+            return Err(Error::SelfPurchase);
+        }
+        let event = Self::get_event_inner(&env, ticket.event_id)?;
+        Self::ensure_not_cancelled(&event)?;
+        Self::ensure_transferable(&event)?;
+        if Self::resale_closed(&env, &event) {
+            return Err(Error::ResaleClosed);
+        }
+        Self::ensure_resale_price_in_band(&ticket, &event, amount)?;
+        let key = DataKey::Offer(ticket_id, buyer.clone());
+        if env.storage().persistent().has(&key) {
+            return Err(Error::OfferAlreadyExists);
+        }
+        let token_address = Self::payment_token_for_event(&env, &event)?;
+
+        // --- effects: record the offer before taking its funds. ---
+        let offer = Offer {
+            seller: ticket.owner.clone(),
+            amount,
+            token: token_address.clone(),
+        };
+        env.storage().persistent().set(&key, &offer);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        Self::adjust_resale_funds(&env, amount);
+
+        // --- interactions ---
+        token::Client::new(&env, &token_address).transfer(
+            &buyer,
+            env.current_contract_address(),
+            &amount,
+        );
+        OfferMade {
+            ticket_id,
+            buyer,
+            amount,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Accepts an open offer and sells the ticket to its buyer (issue #106). The
+    /// owner the offer was made to must still hold the ticket, and it must still
+    /// be listed. The royalty and the seller's share are paid out of the escrowed
+    /// offer, following the same rules as `buy_resale`. Other open offers on the
+    /// ticket stay escrowed, but they can no longer be accepted, and their buyers
+    /// can withdraw them.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::OfferNotFound` when the buyer has no open offer,
+    /// `Error::NotOwner` when the caller is not the current owner who received
+    /// the offer, `Error::NotForResale` when the ticket is no longer listed, and
+    /// `Error::ResaleClosed` once the cutoff has passed.
+    pub fn accept_offer(
+        env: Env,
+        owner: Address,
+        ticket_id: u64,
+        buyer: Address,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        owner.require_auth();
+        let key = DataKey::Offer(ticket_id, buyer.clone());
+        let offer: Offer = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::OfferNotFound)?;
+        let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        if ticket.owner != owner || offer.seller != owner {
+            return Err(Error::NotOwner);
+        }
+        if ticket.status != TicketStatus::Resale {
+            return Err(Error::NotForResale);
+        }
+        Self::ensure_no_auction(&env, ticket_id)?;
+        let event = Self::get_event_inner(&env, ticket.event_id)?;
+        if Self::resale_closed(&env, &event) {
+            return Err(Error::ResaleClosed);
+        }
+        Self::ensure_transferable(&event)?;
+        Self::ensure_transfer_allowed(&env, &ticket, &event)?;
+        let (royalty, seller_amount) = Self::split_resale_price(&event, offer.amount)?;
+
+        // --- effects: settle state before any untrusted external call. ---
+        env.storage().persistent().remove(&key);
+        Self::adjust_resale_funds(&env, -offer.amount);
+        Self::move_owner_balance(&env, ticket_id, &owner, &buyer);
+        ticket.owner = buyer.clone();
+        ticket.transfers += 1;
+        ticket.status = TicketStatus::Valid;
+        ticket.resale_price = 0;
+        Self::remove_gift_claim(&env, ticket_id);
+        Self::save_ticket(&env, ticket_id, &ticket);
+
+        // --- interactions: pay out from the escrowed offer. ---
+        let token_client = token::Client::new(&env, &offer.token);
+        let contract = env.current_contract_address();
+        if royalty > 0 {
+            Self::pay_royalty(&token_client, &contract, &event, royalty)?;
+        }
+        if seller_amount > 0 {
+            token_client.transfer(&contract, &owner, &seller_amount);
+        }
+        OfferAccepted {
+            ticket_id,
+            buyer,
+            amount: offer.amount,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Cancels an open offer and returns the escrowed funds to the buyer (issue
+    /// #106). The owner the offer was made to can reject it, and the buyer can
+    /// withdraw their own offer. Neither path requires the ticket to still be
+    /// listed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::OfferNotFound` when the buyer has no open offer, and
+    /// `Error::NotOwner` when the caller is neither the buyer nor the offer's seller.
+    pub fn cancel_offer(
+        env: Env,
+        caller: Address,
+        ticket_id: u64,
+        buyer: Address,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        caller.require_auth();
+        let key = DataKey::Offer(ticket_id, buyer.clone());
+        let offer: Offer = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::OfferNotFound)?;
+        if caller != buyer && caller != offer.seller {
+            return Err(Error::NotOwner);
+        }
+
+        // --- effects, then refund. ---
+        env.storage().persistent().remove(&key);
+        Self::adjust_resale_funds(&env, -offer.amount);
+        token::Client::new(&env, &offer.token).transfer(
+            &env.current_contract_address(),
+            &buyer,
+            &offer.amount,
+        );
+        OfferCancelled {
+            ticket_id,
+            buyer,
+            amount: offer.amount,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Reads an open offer on a ticket (issue #106).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::OfferNotFound` when the buyer has no open offer.
+    pub fn get_offer(env: Env, ticket_id: u64, buyer: Address) -> Result<Offer, Error> {
+        let offer: Offer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Offer(ticket_id, buyer))
+            .ok_or(Error::OfferNotFound)?;
+        Ok(offer)
+    }
+
+    /// Approves `operator` to move one ticket on the owner's behalf with
+    /// `transfer_from` (issue #107). A ticket has at most one approved operator,
+    /// so a new approval replaces the old one. The approval is cleared whenever
+    /// the ticket changes owner, so a new holder never inherits it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotOwner` for a non-owner, `Error::SelfTransfer` when the
+    /// operator is the owner, and `Error::Revoked` or `Error::AlreadyUsed` for a
+    /// ticket that can no longer move.
+    pub fn approve(
+        env: Env,
+        owner: Address,
+        ticket_id: u64,
+        operator: Address,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        owner.require_auth();
+        let ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        if ticket.owner != owner {
+            return Err(Error::NotOwner);
+        }
+        Self::require_not_terminal(&ticket)?;
+        if operator == owner {
+            return Err(Error::SelfTransfer);
+        }
+        let key = DataKey::TicketApproval(ticket_id);
+        env.storage().persistent().set(&key, &operator);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        Ok(())
+    }
+
+    /// Removes the operator approval on a ticket (issue #107). Idempotent.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotOwner` when the caller does not own the ticket.
+    pub fn revoke_approval(env: Env, owner: Address, ticket_id: u64) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        owner.require_auth();
+        let ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        if ticket.owner != owner {
+            return Err(Error::NotOwner);
+        }
+        env.storage()
+            .persistent()
+            .remove(&DataKey::TicketApproval(ticket_id));
+        Ok(())
+    }
+
+    /// The operator approved to move a ticket, or `None` when no approval is
+    /// set (issue #107).
+    pub fn get_approved(env: Env, ticket_id: u64) -> Option<Address> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TicketApproval(ticket_id))
+    }
+
+    /// Moves a ticket from `from` to `to` on behalf of its approved operator
+    /// `spender` (issue #107). The argument order follows SEP-50. The move follows
+    /// the same rules as `transfer_ticket`, and the approval is cleared once the
+    /// ticket changes owner.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotApproved` when `spender` is not the approved operator,
+    /// and `Error::NotOwner` when `from` does not own the ticket.
+    pub fn transfer_from(
+        env: Env,
+        spender: Address,
+        from: Address,
+        to: Address,
+        ticket_id: u64,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        spender.require_auth();
+        if from == to {
+            return Err(Error::SelfTransfer);
+        }
+        let approved: Option<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TicketApproval(ticket_id));
+        if approved != Some(spender) {
+            return Err(Error::NotApproved);
+        }
+        Self::transfer_owned_ticket(&env, ticket_id, &from, &to)
     }
 
     /// Loads an event and verifies its organizer after the caller has
@@ -2279,6 +2834,11 @@ impl TicketingContract {
         Self::credit_owner_balance(env, to);
         Self::remove_from_owner_index(env, from, ticket_id);
         Self::add_to_owner_index(env, to, ticket_id);
+        // An operator approval belongs to the owner who granted it, so it ends
+        // with that ownership (issue #107).
+        env.storage()
+            .persistent()
+            .remove(&DataKey::TicketApproval(ticket_id));
     }
 
     /// Appends a ticket to its owner's index at the next free slot (issue #111).
@@ -2393,6 +2953,143 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Moves a ticket to `to` after checking that `from` owns it. Shared by
+    /// `transfer_ticket` and `transfer_from` so both apply the same rules
+    /// (issues #107 and #115).
+    fn transfer_owned_ticket(
+        env: &Env,
+        ticket_id: u64,
+        from: &Address,
+        to: &Address,
+    ) -> Result<(), Error> {
+        let mut ticket = Self::get_ticket_inner(env, ticket_id)?;
+        if ticket.owner != *from {
+            return Err(Error::NotOwner);
+        }
+        Self::require_not_terminal(&ticket)?;
+        let event = Self::get_event_inner(env, ticket.event_id)?;
+        Self::ensure_transferable(&event)?;
+        Self::ensure_transfer_allowed(env, &ticket, &event)?;
+        if Self::transfer_frozen(env, &event) {
+            return Err(Error::TransfersFrozen);
+        }
+        Self::ensure_no_auction(env, ticket_id)?;
+        Self::move_owner_balance(env, ticket_id, &ticket.owner, to);
+        ticket.owner = to.clone();
+        ticket.transfers += 1;
+        ticket.status = TicketStatus::Valid;
+        ticket.resale_price = 0;
+        Self::remove_gift_claim(env, ticket_id);
+        Self::save_ticket(env, ticket_id, &ticket);
+        TicketTransferred {
+            ticket_id,
+            from: from.clone(),
+            to: to.clone(),
+        }
+        .publish(env);
+        Ok(())
+    }
+
+    /// Reads an auction record, or fails with `AuctionNotFound` (issue #105).
+    fn get_auction_inner(env: &Env, ticket_id: u64) -> Result<Auction, Error> {
+        let auction: Auction = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Auction(ticket_id))
+            .ok_or(Error::AuctionNotFound)?;
+        Ok(auction)
+    }
+
+    fn has_auction(env: &Env, ticket_id: u64) -> bool {
+        env.storage().persistent().has(&DataKey::Auction(ticket_id))
+    }
+
+    /// Rejects an operation that would move or sell a ticket while its auction
+    /// is running (issue #105).
+    fn ensure_no_auction(env: &Env, ticket_id: u64) -> Result<(), Error> {
+        if Self::has_auction(env, ticket_id) {
+            return Err(Error::AuctionActive);
+        }
+        Ok(())
+    }
+
+    /// Writes an auction and refreshes its TTL (issue #105).
+    fn save_auction(env: &Env, ticket_id: u64, auction: &Auction) {
+        let key = DataKey::Auction(ticket_id);
+        env.storage().persistent().set(&key, auction);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Total funds the contract holds for resale bids and offers (issues #105, #106).
+    fn resale_funds_outstanding(env: &Env) -> i128 {
+        env.storage()
+            .instance()
+            .get::<_, i128>(&DataKey::OutstandingResaleFunds)
+            .unwrap_or(0)
+    }
+
+    /// Moves the contract's resale funds total by `delta` (issues #105, #106).
+    fn adjust_resale_funds(env: &Env, delta: i128) {
+        let total = Self::resale_funds_outstanding(env) + delta;
+        env.storage()
+            .instance()
+            .set(&DataKey::OutstandingResaleFunds, &total);
+    }
+
+    /// Platform fee owed on a primary sale of `price`, rounded down (issue #104).
+    fn platform_fee_on(env: &Env, price: i128) -> Result<i128, Error> {
+        let fee_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PlatformFeeBps)
+            .unwrap_or(0);
+        if fee_bps == 0 {
+            return Ok(0);
+        }
+        let product = price
+            .checked_mul(fee_bps as i128)
+            .ok_or(Error::MathOverflow)?;
+        Ok(product / BPS_DENOMINATOR as i128)
+    }
+
+    /// Splits a resale price into `(royalty, seller_amount)` using the event's
+    /// royalty rate. The seller takes the remainder, so the two always sum to
+    /// `price`.
+    fn split_resale_price(event: &Event, price: i128) -> Result<(i128, i128), Error> {
+        let royalty_product = price
+            .checked_mul(event.royalty_bps as i128)
+            .ok_or(Error::MathOverflow)?;
+        let royalty = royalty_product / BPS_DENOMINATOR as i128;
+        Ok((royalty, price - royalty))
+    }
+
+    /// Checks a resale-market price against the event's cap and floor (issues
+    /// #105, #106). Listings, bids and offers all use the same band.
+    fn ensure_resale_price_in_band(
+        ticket: &Ticket,
+        event: &Event,
+        price: i128,
+    ) -> Result<(), Error> {
+        let cap =
+            Self::calculate_resale_cap(ticket.original_price, event.max_resale_multiplier_bps)?;
+        if price > cap {
+            return Err(Error::ResalePriceExceedsCap);
+        }
+        if let Some(floor_bps) = event.min_resale_multiplier_bps {
+            let floor_product = ticket
+                .original_price
+                .checked_mul(floor_bps as i128)
+                .ok_or(Error::MathOverflow)?;
+            let floor = floor_product / 10_000;
+            if price < floor {
+                return Err(Error::ResalePriceBelowFloor);
+            }
+        }
+        Ok(())
     }
 
     fn remove_gift_claim(env: &Env, ticket_id: u64) {

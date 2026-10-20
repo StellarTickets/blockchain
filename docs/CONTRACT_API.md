@@ -59,7 +59,21 @@ clients do not break. It may be removed only in a future breaking deployment.
 | `cancel_resale(owner, ticket_id)` | `owner` | Cancels an active resale listing before the resale cutoff. |
 | `buy_resale(buyer, ticket_id)` | `buyer` | Purchases a resale listing and settles royalty plus seller proceeds. |
 | `get_resale_price_cap(ticket_id)` | anyone | Exposes the maximum allowed resale price for a ticket. |
-| `quote_resale(ticket_id)` | anyone | Returns a read-only quote `(price, royalty, seller_amount)` for resale settlement. |
+| `quote_resale(ticket_id)` | anyone | Returns a read-only quote `(price, royalty, seller_amount)` for resale settlement. Errors for an auctioned ticket. |
+| `start_auction(owner, ticket_id, reserve_price, ends_at)` | `owner` | Starts a timed auction on an owned ticket. `ends_at` must be in the future and no later than the resale cutoff (issue #105). |
+| `place_bid(bidder, ticket_id, amount)` | `bidder` | Escrows a bid that beats the reserve and the current high bid, within the resale cap. Refunds the bidder it displaces (issue #105). |
+| `settle_auction(ticket_id)` | anyone | Settles an auction after `ends_at`. The high bidder gets the ticket and the bid is split between royalty and seller (issue #105). |
+| `get_auction(ticket_id)` | anyone | Reads the open auction for a ticket. |
+| `make_offer(buyer, ticket_id, amount)` | `buyer` | Escrows an offer on a listed ticket, within the resale price band (issue #106). |
+| `accept_offer(owner, ticket_id, buyer)` | `owner` | Accepts an offer made to the current owner and settles it like `buy_resale` (issue #106). |
+| `cancel_offer(caller, ticket_id, buyer)` | buyer or offer's owner | Refunds an open offer. The buyer withdraws it, or the owner it was made to rejects it (issue #106). |
+| `get_offer(ticket_id, buyer)` | anyone | Reads an open offer. |
+| `approve(owner, ticket_id, operator)` | `owner` | Approves one operator to move the ticket with `transfer_from` (issue #107). |
+| `revoke_approval(owner, ticket_id)` | `owner` | Removes the ticket's operator approval. |
+| `get_approved(ticket_id)` | anyone | Returns the approved operator, or `None`. |
+| `transfer_from(spender, from, to, ticket_id)` | `spender` (approved operator) | Moves a ticket on the owner's behalf, following SEP-50 argument order (issue #107). |
+| `set_platform_fee_bps(admin, fee_bps)` | `admin` | Sets the platform fee on primary sales, in basis points. `0` turns it off (issue #104). |
+| `platform_fee_bps()` | anyone | Reads the platform fee in basis points. |
 | `get_event(event_id)` | anyone | Read-only event lookup. |
 | `get_ticket(ticket_id)` | anyone | Read-only ticket lookup. |
 | `owner_of(token_id)` | anyone | SEP-50 read: the address that currently owns a ticket (issue #110). |

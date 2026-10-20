@@ -64,6 +64,10 @@ constraint here.
 | Persistent | `OrganizerEventAt(organizer, index)` | `create_event`, `create_event_with_options` (written once per event) | never removed; read by `list_organizer_events` |
 | Persistent | `TicketMetadataUri(id)` | `issue_ticket_with_metadata` (only when a URI is supplied) | — (renewed with its ticket by `extend_ticket_ttl`, and absent for tickets without a URI) |
 | Persistent | `OwnerBalance(owner)` | every mint and ownership change; `extend_ticket_ttl` renews the owner's counter | — (a holder whose tickets are never renewed or moved lets the counter lapse, so `balance` then reads 0; see [SEP50.md](SEP50.md)) |
+| Instance | `PlatformFeeBps`, `OutstandingResaleFunds` | every entry point, through `extend_instance_ttl` | — (instance storage shares the instance TTL) |
+| Persistent | `Auction(id)` | `start_auction`, each `place_bid`, `extend_ticket_ttl` | removed on `settle_auction` or `cancel_resale` |
+| Persistent | `Offer(id, buyer)` | `make_offer` only | removed on `accept_offer` or `cancel_offer`. Not renewed by `extend_ticket_ttl`. An offer left idle past its TTL is archived, and its escrowed funds come back only after the entry is restored. |
+| Persistent | `TicketApproval(id)` | `approve`, `extend_ticket_ttl` | removed on any owner change, on burn, or by `revoke_approval` |
 
 Two structural notes:
 

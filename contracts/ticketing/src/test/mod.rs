@@ -31,6 +31,7 @@ pub mod helpers;
 mod listing_events;
 mod metadata;
 mod multi_use;
+mod offers;
 mod organizer_allowlist;
 mod organizer_listing;
 mod owner_history;
