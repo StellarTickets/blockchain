@@ -11,6 +11,24 @@
 6. Record the deployed contract ID in the backend's
    `TICKETING_CONTRACT_ID` environment variable
 
+## Release assets
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which attaches these
+files to the GitHub release (and uploads them as the `ticketing-wasm` CI
+artefact):
+
+| File | Contents |
+|---|---|
+| `stellar_tickets_ticketing.wasm` | the contract to deploy |
+| `stellar_tickets_ticketing.wasm.sha256` | its checksum |
+| `stellar_tickets_ticketing.spec.json` | contract spec (functions, types, errors, events) as JSON (issue #60) |
+| `stellar_tickets_ticketing.spec.xdr` | the same spec as base64 `SCSpecEntry` XDR |
+
+Integrators can generate bindings or decode events from the spec without
+building the wasm. `make spec` writes the same two spec files locally, and
+for a deployed contract the spec can be checked against the release with
+`stellar contract info interface --contract-id <id> --network <network> --output json-formatted`.
+
 ## Multisig admin
 
 On mainnet the contract admin should be a multisig account rather than a

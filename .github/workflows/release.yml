@@ -42,6 +42,10 @@ jobs:
           sha256sum target/wasm32v1-none/release/stellar_tickets_ticketing.wasm \
             > target/wasm32v1-none/release/stellar_tickets_ticketing.wasm.sha256
           cat target/wasm32v1-none/release/stellar_tickets_ticketing.wasm.sha256
+      # The contract spec lets integrators generate bindings and decode
+      # events without building the wasm themselves (issue #60).
+      - name: Export contract spec
+        run: scripts/export-spec.sh target/wasm32v1-none/release
       - name: Upload wasm artifact
         uses: actions/upload-artifact@v4
         with:
@@ -49,9 +53,13 @@ jobs:
           path: |
             target/wasm32v1-none/release/stellar_tickets_ticketing.wasm
             target/wasm32v1-none/release/stellar_tickets_ticketing.wasm.sha256
+            target/wasm32v1-none/release/stellar_tickets_ticketing.spec.json
+            target/wasm32v1-none/release/stellar_tickets_ticketing.spec.xdr
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
             target/wasm32v1-none/release/stellar_tickets_ticketing.wasm
             target/wasm32v1-none/release/stellar_tickets_ticketing.wasm.sha256
+            target/wasm32v1-none/release/stellar_tickets_ticketing.spec.json
+            target/wasm32v1-none/release/stellar_tickets_ticketing.spec.xdr
