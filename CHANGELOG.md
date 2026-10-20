@@ -18,6 +18,14 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   for the dependency versioning policy and upgrade procedure.
 
 ### Added
+- Releases attach the contract spec as `stellar_tickets_ticketing.spec.json`
+  and `.spec.xdr`, exported by `scripts/export-spec.sh` (`make spec`) (#60).
+- Sample event indexer in `examples/indexer` that decodes events from the
+  release spec (#58).
+- `stellar tickets` CLI plugin in `scripts/plugins` for admin and TTL
+  maintenance calls, with a mainnet prompt and `--build-only` for multisig
+  admins (#62).
+- Mainnet monitoring guide, `docs/MONITORING.md` (#64).
 - Primary-sale platform fee: `set_platform_fee_bps` takes a fee in basis points
   from each primary sale and pays it to the admin. The organizer receives the
   rest, through escrow when the event uses it. `platform_fee_bps` reads it
