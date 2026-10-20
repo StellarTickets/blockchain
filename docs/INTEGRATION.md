@@ -230,6 +230,11 @@ practical rules for a server:
 | Event | Emitted by |
 |---|---|
 | `TicketIssued` | `issue_ticket`, `purchase_primary`, `allocate_lottery` |
+| `PrimarySale` | `purchase_primary` |
+| `EventCreated` | `create_event`, `create_event_with_options` |
+| `TicketListed` | `list_for_resale` |
+| `ListingCancelled` | `cancel_resale` |
+| `TicketResold` | `buy_resale` |
 | `TicketCheckedIn` | `check_in`, `check_in_batch` |
 | `ContractInitialized` | `initialize` |
 | `PurchaseThrottleUpdated` | `set_purchase_throttle` |

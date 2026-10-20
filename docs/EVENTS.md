@@ -44,6 +44,61 @@ A rejected transfer publishes nothing. Batch transfers, gift claims and resale
 purchases change ownership without publishing this event today, so indexers
 that need every owner change must still read them from `owner_of`.
 
+## `EventCreated`
+
+Emitted by `create_event` and `create_event_with_options` after the event is
+saved (issue #119).
+
+| Field | Type | Notes |
+|---|---|---|
+| `organizer` | `Address` | topic. Organizer that registered the event |
+| `event_id` | `u64` | topic |
+
+## `PrimarySale`
+
+Emitted by `purchase_primary` after the ticket is minted (issue #118).
+
+| Field | Type | Notes |
+|---|---|---|
+| `ticket_id` | `u64` | topic |
+| `buyer` | `Address` | Address that paid for the ticket |
+| `price` | `i128` | Amount paid, in the event's payment token |
+
+## `TicketListed`
+
+Emitted by `list_for_resale` after the listing is saved (issue #116).
+
+| Field | Type | Notes |
+|---|---|---|
+| `ticket_id` | `u64` | topic |
+| `owner` | `Address` | Seller who listed the ticket |
+| `price` | `i128` | Listing price, within the event's resale cap |
+
+## `ListingCancelled`
+
+Emitted by `cancel_resale` after the listing is removed (issue #116).
+
+| Field | Type | Notes |
+|---|---|---|
+| `ticket_id` | `u64` | topic |
+| `owner` | `Address` | Owner who cancelled the listing |
+
+## `TicketResold`
+
+Emitted by `buy_resale` after ownership and the royalty split are settled
+(issue #117).
+
+| Field | Type | Notes |
+|---|---|---|
+| `ticket_id` | `u64` | topic |
+| `seller` | `Address` | Owner before the purchase |
+| `buyer` | `Address` | Owner after the purchase |
+| `price` | `i128` | Full resale price paid by the buyer |
+| `royalty` | `i128` | Part of `price` paid to the organizer (or royalty splits) |
+
+Resale purchases also publish `TicketResold`, so marketplace indexers do not
+need to derive the price or royalty from token transfers.
+
 ## Admin events
 
 | Event | Emitted by | Fields |
