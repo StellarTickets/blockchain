@@ -111,23 +111,7 @@ need to derive the price or royalty from token transfers.
 | `OrganizerRevoked` | `revoke_organizer` | `admin` (topic), `organizer` |
 | `PaymentTokenProposed` | `propose_payment_token` | `admin` (topic), `new_token`, `apply_after_ledger` |
 | `PaymentTokenChanged` | `apply_payment_token` | `admin` (topic), `old_token`, `new_token` |
-| `PlatformFeeUpdated` | `set_platform_fee_bps` | `admin` (topic), `fee_bps` (issue #104) |
-
-## Resale marketplace events
-
-Auction, offer and approval activity is published so indexers can follow it
-without polling. Failed calls publish nothing, as with every other event.
-
-| Event | Emitted by | Fields |
-|---|---|---|
-| `AuctionStarted` | `start_auction` | `ticket_id` (topic), `seller`, `reserve_price`, `ends_at` (issue #105) |
-| `BidPlaced` | `place_bid` | `ticket_id` (topic), `bidder`, `amount`. Emitted for every bid that becomes the highest. |
-| `AuctionSettled` | `settle_auction` | `ticket_id` (topic), `buyer`, `amount`. Emitted only when a winning bid moves the ticket. |
-| `OfferMade` | `make_offer` | `ticket_id` (topic), `buyer`, `amount` (issue #106) |
-| `OfferCancelled` | `cancel_offer` | `ticket_id` (topic), `buyer`, `amount`. Emitted for both an owner rejection and a buyer withdrawal. |
-| `OfferAccepted` | `accept_offer` | `ticket_id` (topic), `buyer`, `amount` |
-
-Neither `accept_offer` nor `settle_auction` publishes `TicketTransferred`
-today, so the ownership change is visible only through `OfferAccepted` or
-`AuctionSettled`, or by reading `owner_of`. `transfer_from` does publish
-`TicketTransferred` (issue #107). Approvals publish no event of their own.
+| `ContractUpgraded` | `upgrade` | `admin` (topic), `new_wasm_hash` (see [UPGRADES.md](UPGRADES.md)) |
+| `AdminProposed` | `propose_admin` | `admin` (topic), `new_admin` |
+| `AdminTransferred` | `accept_admin` | `old_admin` (topic), `new_admin` |
+| `PlatformFeeUpdated` | `set_platform_fee` | `admin` (topic), `fee_bps`, `recipient` |

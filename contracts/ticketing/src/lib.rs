@@ -25,7 +25,7 @@ pub use events::{
     TicketTransferred,
 };
 pub use types::{
-    Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
+    Category, DataKey, Event, EventParams, GiftClaim, PendingPaymentToken, PlatformFee,
     StoredTicket, Ticket, TicketRecipient, TicketStatus,
 };
 
@@ -278,6 +278,11 @@ impl TicketingContract {
         if params.royalty_bps > 10_000 {
             return Err(Error::InvalidRoyalty);
         }
+        // Issue #103: the royalty and the platform fee together cannot take more
+        // than the whole resale price.
+        if params.royalty_bps + Self::platform_fee_bps(&env) > BPS_DENOMINATOR {
+            return Err(Error::InvalidRoyalty);
+        }
         // Issue #124: a multiplier below face value (10_000 bps) makes every
         // resale impossible — `list_for_resale` computes the cap as
         // `original_price * max_resale_multiplier_bps / 10_000`, which lands
@@ -331,6 +336,7 @@ impl TicketingContract {
             cancelled: false,
             royalty_splits: None,
         };
+        Self::record_royalty_bps(&env, event.royalty_bps);
         Self::save_event(&env, event_id, &event);
         env.storage()
             .persistent()
@@ -2075,6 +2081,11 @@ impl TicketingContract {
         if royalty > 0 {
             Self::pay_royalty(&token_client, &buyer, &event, royalty)?;
         }
+        if platform_fee > 0 {
+            if let Some(fee) = &fee_config {
+                token_client.transfer(&buyer, &fee.recipient, &platform_fee);
+            }
+        }
         if seller_amount > 0 {
             token_client.transfer(&buyer, &seller, &seller_amount);
         }
@@ -2092,6 +2103,8 @@ impl TicketingContract {
     /// Returns a read-only quote for resale settlement: `(price, royalty, seller_amount)`.
     ///
     /// Matches the calculation in `buy_resale` without modifying any state.
+    /// `seller_amount` is net of the platform fee (issue #103), so the fee
+    /// itself is `price - royalty - seller_amount`.
     ///
     /// # Errors
     ///
@@ -2108,7 +2121,8 @@ impl TicketingContract {
         // An auctioned ticket has no fixed price to quote (issue #105).
         Self::ensure_no_auction(&env, ticket_id)?;
         let event = Self::get_event_inner(&env, ticket.event_id)?;
-        let (royalty, seller_amount) = Self::split_resale_price(&event, ticket.resale_price)?;
+        let fee_bps = Self::platform_fee_bps(&env);
+        let (royalty, _, seller_amount) = Self::resale_split(&event, ticket.resale_price, fee_bps)?;
         Ok((ticket.resale_price, royalty, seller_amount))
     }
 
@@ -3546,6 +3560,166 @@ impl TicketingContract {
             .instance()
             .get(&DataKey::TokenDecimals)
             .ok_or(Error::NotInitialized)
+    }
+
+    /// Version of the contract build, taken from the crate's `Cargo.toml` at
+    /// compile time (issue #102). Consumers read it to tell which build is
+    /// deployed before relying on newer entry points.
+    pub fn version(env: Env) -> String {
+        String::from_str(&env, env!("CARGO_PKG_VERSION"))
+    }
+
+    /// Replaces this contract's WASM with `new_wasm_hash` (issue #101). The
+    /// new code must already be on the ledger. Admin only.
+    ///
+    /// Only the code changes. Stored keys and value layouts stay as they are,
+    /// so a new build must still read existing state or ship a migration. See
+    /// [docs/UPGRADES.md](../../docs/UPGRADES.md) for the rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotAdmin` when `admin` is not the stored admin.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        env.deployer()
+            .update_current_contract(ContractExecutable::Wasm(new_wasm_hash.clone()));
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Step one of an admin transfer (issue #100): the current admin nominates
+    /// `new_admin`. Nothing changes until the nominee calls `accept_admin`. A
+    /// new proposal replaces any pending one.
+    pub fn propose_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+        AdminProposed { admin, new_admin }.publish(&env);
+        Ok(())
+    }
+
+    /// Step two of an admin transfer (issue #100): the nominee accepts and
+    /// becomes the admin. The nominee's auth is required, so the admin role
+    /// cannot be pushed onto an address that never agreed to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NoPendingAdmin` when no transfer is pending, and
+    /// `Error::NotPendingAdmin` when `new_admin` is not the nominee.
+    pub fn accept_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        new_admin.require_auth();
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .ok_or(Error::NoPendingAdmin)?;
+        if pending != new_admin {
+            return Err(Error::NotPendingAdmin);
+        }
+        let old_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        AdminTransferred {
+            old_admin,
+            new_admin,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Sets the platform fee taken from every resale (issue #103). The fee
+    /// comes out of the seller's proceeds, is paid to `recipient` on each
+    /// resale, and sits alongside the organizer royalty. Zero turns it off.
+    ///
+    /// The fee plus the highest royalty of any event created so far must not
+    /// exceed 100% of the resale price, so a resale never pays out more than
+    /// it collected.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidPlatformFee` when `fee_bps` exceeds 10_000, or
+    /// when `fee_bps` plus the highest event royalty exceeds 10_000.
+    pub fn set_platform_fee(
+        env: Env,
+        admin: Address,
+        fee_bps: u32,
+        recipient: Address,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        if fee_bps > BPS_DENOMINATOR || fee_bps + Self::max_royalty_bps(&env) > BPS_DENOMINATOR {
+            return Err(Error::InvalidPlatformFee);
+        }
+        env.storage().instance().set(
+            &DataKey::PlatformFee,
+            &PlatformFee {
+                bps: fee_bps,
+                recipient: recipient.clone(),
+            },
+        );
+        PlatformFeeUpdated {
+            admin,
+            fee_bps,
+            recipient,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// The configured platform fee, or `None` when none has been set.
+    pub fn platform_fee(env: Env) -> Option<PlatformFee> {
+        Self::platform_fee_config(&env)
+    }
+
+    fn platform_fee_config(env: &Env) -> Option<PlatformFee> {
+        env.storage().instance().get(&DataKey::PlatformFee)
+    }
+
+    fn platform_fee_bps(env: &Env) -> u32 {
+        Self::platform_fee_config(env).map_or(0, |fee| fee.bps)
+    }
+
+    fn max_royalty_bps(env: &Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::MaxRoyaltyBps)
+            .unwrap_or(0)
+    }
+
+    /// Raises the recorded highest royalty when a new event exceeds it, so
+    /// `set_platform_fee` can bound the fee against every event.
+    fn record_royalty_bps(env: &Env, royalty_bps: u32) {
+        if royalty_bps > Self::max_royalty_bps(env) {
+            env.storage()
+                .instance()
+                .set(&DataKey::MaxRoyaltyBps, &royalty_bps);
+        }
+    }
+
+    /// Splits a resale price into `(royalty, platform_fee, seller_amount)`.
+    /// The royalty and the fee are each rounded down, and the seller keeps the
+    /// remainder, so the three parts always sum to `price`.
+    fn resale_split(event: &Event, price: i128, fee_bps: u32) -> Result<(i128, i128, i128), Error> {
+        let royalty = Self::bps_of(price, event.royalty_bps)?;
+        let platform_fee = Self::bps_of(price, fee_bps)?;
+        Ok((royalty, platform_fee, price - royalty - platform_fee))
+    }
+
+    fn bps_of(amount: i128, bps: u32) -> Result<i128, Error> {
+        let product = amount.checked_mul(bps as i128).ok_or(Error::MathOverflow)?;
+        Ok(product / BPS_DENOMINATOR as i128)
     }
 
     fn payment_token(env: &Env) -> Result<Address, Error> {

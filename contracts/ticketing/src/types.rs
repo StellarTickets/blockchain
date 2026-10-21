@@ -279,6 +279,17 @@ pub struct PendingPaymentToken {
     pub apply_after_ledger: u32,
 }
 
+/// Platform fee taken from every resale and paid to `recipient` out of the
+/// seller's proceeds, alongside the organizer royalty (issue #103).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformFee {
+    /// Share of each resale price, in basis points.
+    pub bps: u32,
+    /// Address that receives the fee.
+    pub recipient: Address,
+}
+
 /// Storage keys for all contract state.
 ///
 /// # Index naming convention

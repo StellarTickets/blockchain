@@ -6,6 +6,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- Resolve a duplicate error discriminant: `ZoneNotAllowed` moves from `61`
+  to `66`, since `61` was already `GiftClaimAlreadyExists`. The crate could
+  not compile with both.
 - Repair merged organizer approval and packed ticket lookup definitions, and
   update a stale event-creation test so the contract builds again.
 

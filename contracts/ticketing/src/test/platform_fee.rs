@@ -1,138 +1,149 @@
-//! Platform fee on primary sales (issue #104).
+//! Platform fee on resales (issue #103).
 //!
-//! The fee is taken from each primary sale and paid to the admin. The organizer
-//! receives the rest, through escrow when the event uses it.
+//! The fee comes out of the seller's proceeds, next to the organizer royalty.
+//! Fee plus royalty may never exceed the resale price.
 
 use super::*;
 
-/// Prices tier "GA" on event 1 at `price` and mints the buyer enough to pay it.
-fn priced_event_and_buyer(
+/// Issues a ticket at 1_000 and lists it at 1_100. With the 500 bps royalty
+/// from `make_event`, the royalty is 55. A 250 bps fee is 27.5, which rounds
+/// down to 27, leaving the seller 1_018.
+fn list_sample_ticket(
     env: &Env,
     client: &TicketingContractClient,
-    token_asset: &StellarAssetClient,
     organizer: &Address,
-    price: i128,
-) -> Address {
-    make_event(env, client, organizer, 1);
-    client.set_tier_price(organizer, &1, &String::from_str(env, "GA"), &price);
-    let buyer = Address::generate(env);
-    mint_tokens(token_asset, &buyer, price);
-    buyer
+    seller: &Address,
+) -> u64 {
+    let ticket_id = issue_sample_ticket(env, client, organizer, 1, seller, 1_000);
+    client.list_for_resale(seller, &ticket_id, &1_100i128);
+    ticket_id
 }
 
-fn buy_ga(env: &Env, client: &TicketingContractClient, buyer: &Address) -> u64 {
-    client.purchase_primary(
-        buyer,
-        &1,
-        &String::from_str(env, "GA"),
-        &String::from_str(env, "unassigned"),
-    )
+fn event_params(env: &Env, royalty_bps: u32) -> EventParams {
+    EventParams {
+        name: String::from_str(env, "Gala"),
+        category: String::from_str(env, "concert"),
+        max_resale_multiplier_bps: 12_000,
+        royalty_bps,
+        starts_at: 10_000,
+        transfer_freeze_seconds: 100,
+        resale_cutoff_seconds: 200,
+    }
 }
 
 #[test]
-fn primary_sale_without_a_fee_pays_the_organizer_in_full() {
+fn fee_is_paid_to_the_recipient_out_of_the_seller_proceeds() {
     let (env, client, token, token_asset, admin, organizer) = setup();
-    let buyer = priced_event_and_buyer(&env, &client, &token_asset, &organizer, 1_000);
+    make_event(&env, &client, &organizer, 1);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let platform = Address::generate(&env);
+    client.set_platform_fee(&admin, &250, &platform);
+    let ticket_id = list_sample_ticket(&env, &client, &organizer, &seller);
 
-    assert_eq!(client.platform_fee_bps(), 0);
-    buy_ga(&env, &client, &buyer);
+    token_asset.mint(&buyer, &10_000i128);
+    client.buy_resale(&buyer, &ticket_id);
 
-    assert_eq!(token.balance(&organizer), 1_000);
-    assert_eq!(token.balance(&admin), 0);
-    assert_eq!(token.balance(&buyer), 0);
+    assert_eq!(token.balance(&organizer), 55);
+    assert_eq!(token.balance(&platform), 27);
+    assert_eq!(token.balance(&seller), 1_018);
+    assert_eq!(client.get_ticket(&ticket_id).owner, buyer);
 }
 
 #[test]
-fn primary_sale_pays_the_fee_to_the_admin_and_the_rest_to_the_organizer() {
+fn quote_resale_reports_the_seller_amount_net_of_the_fee() {
+    let (env, client, _token, _token_asset, admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let seller = Address::generate(&env);
+    let platform = Address::generate(&env);
+    client.set_platform_fee(&admin, &250, &platform);
+    let ticket_id = list_sample_ticket(&env, &client, &organizer, &seller);
+
+    // The fee is the difference: 1_100 - 55 - 1_018 = 27.
+    assert_eq!(client.quote_resale(&ticket_id), (1_100, 55, 1_018));
+}
+
+#[test]
+fn no_fee_leaves_resale_settlement_unchanged() {
+    let (env, client, token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let ticket_id = list_sample_ticket(&env, &client, &organizer, &seller);
+
+    assert_eq!(client.platform_fee(), None);
+    token_asset.mint(&buyer, &10_000i128);
+    client.buy_resale(&buyer, &ticket_id);
+
+    assert_eq!(token.balance(&organizer), 55);
+    assert_eq!(token.balance(&seller), 1_045);
+}
+
+#[test]
+fn zero_fee_switches_the_fee_off() {
     let (env, client, token, token_asset, admin, organizer) = setup();
-    let buyer = priced_event_and_buyer(&env, &client, &token_asset, &organizer, 1_000);
+    make_event(&env, &client, &organizer, 1);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let platform = Address::generate(&env);
+    client.set_platform_fee(&admin, &250, &platform);
+    client.set_platform_fee(&admin, &0, &platform);
+    let ticket_id = list_sample_ticket(&env, &client, &organizer, &seller);
 
-    client.set_platform_fee_bps(&admin, &250); // 2.5%
-    assert_eq!(client.platform_fee_bps(), 250);
-    buy_ga(&env, &client, &buyer);
+    token_asset.mint(&buyer, &10_000i128);
+    client.buy_resale(&buyer, &ticket_id);
 
-    assert_eq!(token.balance(&admin), 25);
-    assert_eq!(token.balance(&organizer), 975);
-    assert_eq!(token.balance(&buyer), 0);
+    assert_eq!(token.balance(&platform), 0);
+    assert_eq!(token.balance(&seller), 1_045);
 }
 
 #[test]
-fn fee_rounds_down_in_the_organizers_favour() {
-    let (env, client, token, token_asset, admin, organizer) = setup();
-    let buyer = priced_event_and_buyer(&env, &client, &token_asset, &organizer, 1_000);
-
-    // 333 bps of 1_000 is 33.3, which rounds down to 33 for the admin.
-    client.set_platform_fee_bps(&admin, &333);
-    buy_ga(&env, &client, &buyer);
-
-    assert_eq!(token.balance(&admin), 33);
-    assert_eq!(token.balance(&organizer), 967);
-}
-
-#[test]
-fn setting_the_fee_back_to_zero_turns_it_off() {
-    let (env, client, token, token_asset, admin, organizer) = setup();
-    let buyer = priced_event_and_buyer(&env, &client, &token_asset, &organizer, 1_000);
-
-    client.set_platform_fee_bps(&admin, &250);
-    client.set_platform_fee_bps(&admin, &0);
-    buy_ga(&env, &client, &buyer);
-
-    assert_eq!(client.platform_fee_bps(), 0);
-    assert_eq!(token.balance(&admin), 0);
-    assert_eq!(token.balance(&organizer), 1_000);
-}
-
-#[test]
-fn a_fee_above_100_percent_is_rejected() {
-    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+fn non_admin_cannot_set_the_fee() {
+    let (env, client, _token, _token_asset, _admin, _organizer) = setup();
+    let intruder = Address::generate(&env);
+    let platform = Address::generate(&env);
 
     assert_eq!(
-        client.try_set_platform_fee_bps(&admin, &10_001),
-        Err(Ok(Error::InvalidPlatformFee))
-    );
-    assert_eq!(client.platform_fee_bps(), 0);
-}
-
-#[test]
-fn a_fee_of_100_percent_sends_the_whole_sale_to_the_admin() {
-    let (env, client, token, token_asset, admin, organizer) = setup();
-    let buyer = priced_event_and_buyer(&env, &client, &token_asset, &organizer, 1_000);
-
-    client.set_platform_fee_bps(&admin, &10_000);
-    buy_ga(&env, &client, &buyer);
-
-    assert_eq!(token.balance(&admin), 1_000);
-    assert_eq!(token.balance(&organizer), 0);
-}
-
-#[test]
-fn only_the_admin_can_set_the_platform_fee() {
-    let (env, client, _token, _token_asset, _admin, organizer) = setup();
-
-    assert_eq!(
-        client.try_set_platform_fee_bps(&organizer, &100),
+        client.try_set_platform_fee(&intruder, &250, &platform),
         Err(Ok(Error::NotAdmin))
     );
-    assert_eq!(client.platform_fee_bps(), 0);
 }
 
 #[test]
-fn escrowed_sale_holds_only_the_organizers_share_until_release() {
-    let (env, client, token, token_asset, admin, organizer) = setup();
-    let buyer = priced_event_and_buyer(&env, &client, &token_asset, &organizer, 1_000);
-    client.enable_escrow(&organizer, &1, &500);
-    client.set_platform_fee_bps(&admin, &250);
+fn fee_above_the_whole_price_is_rejected() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let platform = Address::generate(&env);
 
-    buy_ga(&env, &client, &buyer);
-    // The admin's fee is paid straight out, so escrow holds only the organizer's 975.
-    assert_eq!(token.balance(&admin), 25);
-    assert_eq!(token.balance(&client.address), 975);
-    assert_eq!(token.balance(&organizer), 0);
+    assert_eq!(
+        client.try_set_platform_fee(&admin, &10_001, &platform),
+        Err(Ok(Error::InvalidPlatformFee))
+    );
+    assert_eq!(client.platform_fee(), None);
+}
 
-    env.ledger().set_sequence_number(500);
-    client.release_escrow(&organizer, &1);
+#[test]
+fn fee_plus_an_existing_royalty_cannot_exceed_100_percent() {
+    let (env, client, _token, _token_asset, admin, organizer) = setup();
+    client.create_event(&organizer, &1, &event_params(&env, 9_000));
+    let platform = Address::generate(&env);
 
-    assert_eq!(token.balance(&client.address), 0);
-    assert_eq!(token.balance(&organizer), 975);
+    assert_eq!(
+        client.try_set_platform_fee(&admin, &1_001, &platform),
+        Err(Ok(Error::InvalidPlatformFee))
+    );
+    client.set_platform_fee(&admin, &1_000, &platform);
+    assert_eq!(client.platform_fee().map(|fee| fee.bps), Some(1_000));
+}
+
+#[test]
+fn new_event_royalty_cannot_exceed_100_percent_with_the_fee() {
+    let (env, client, _token, _token_asset, admin, organizer) = setup();
+    let platform = Address::generate(&env);
+    client.set_platform_fee(&admin, &1_000, &platform);
+
+    assert_eq!(
+        client.try_create_event(&organizer, &1, &event_params(&env, 9_001)),
+        Err(Ok(Error::InvalidRoyalty))
+    );
+    client.create_event(&organizer, &1, &event_params(&env, 9_000));
 }

@@ -92,6 +92,12 @@ clients do not break. It may be removed only in a future breaking deployment.
 | `tickets_of(owner, start, limit)` | anyone | Returns one page of the ticket ids an address holds, in any status (issue #111). `limit` is clamped to 50. Order is not chronological, since removals move the last entry into the freed slot. Use `balance(owner)` for the count; the issue's `balance_of` name is not added, per the SEP-50 decision above. |
 | `total_tickets()` | anyone | Returns the number of tickets ever issued across all events (issue #114). Never decreases, including for revoked, used or burned tickets. |
 | `token_decimals()` | anyone | Returns decimals cached for the active payment token. |
+| `version()` | anyone | Returns the contract build's semver string from `Cargo.toml` (issue #102). |
+| `propose_admin(admin, new_admin)` | `admin` | Nominates `new_admin` as the next admin. Nothing changes until the nominee accepts. A new proposal replaces the pending one (issue #100). |
+| `set_platform_fee(admin, fee_bps, recipient)` | `admin` | Sets the platform fee taken from every resale and paid to `recipient` out of the seller's proceeds. Zero turns it off. Fee plus the highest event royalty must not exceed 10000 bps, else `InvalidPlatformFee` (issue #103). |
+| `platform_fee()` | anyone | Returns the configured `PlatformFee { bps, recipient }`, or `None` when no fee has been set (issue #103). |
+| `accept_admin(new_admin)` | `new_admin` | Completes an admin transfer. Only the pending nominee may call it (issue #100). |
+| `upgrade(admin, new_wasm_hash)` | `admin` | Replaces the contract WASM with an already-uploaded build; storage is kept. Publishes `ContractUpgraded`. See [UPGRADES.md](UPGRADES.md) (issue #101). |
 
 ## Batch operation atomicity
 

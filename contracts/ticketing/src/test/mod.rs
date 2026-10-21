@@ -13,8 +13,7 @@ use soroban_sdk::{
     Address, Bytes, Env, IntoVal, String, Vec,
 };
 
-mod approvals;
-mod auction;
+mod admin_transfer;
 mod auth;
 mod auth_matrix;
 mod batch_issuance;
@@ -62,5 +61,7 @@ mod tier_zones;
 mod total_tickets;
 mod transfer_controls;
 mod ttl;
+mod upgrade;
+mod version;
 
 pub use helpers::*;

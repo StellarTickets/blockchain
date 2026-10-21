@@ -1,7 +1,7 @@
 //! Contract events emitted by the ticketing contract.
 #![allow(missing_docs)]
 
-use soroban_sdk::{contractevent, Address, String};
+use soroban_sdk::{contractevent, Address, BytesN, String};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,72 +100,39 @@ pub struct TicketTransferred {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when the admin changes the primary sale platform fee (issue #104).
+/// Emitted when the admin replaces the contract WASM with `upgrade` (issue #101).
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin nominates a new admin with `propose_admin` (issue #100).
+pub struct AdminProposed {
+    #[topic]
+    pub admin: Address,
+    pub new_admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the pending admin accepts with `accept_admin` (issue #100).
+pub struct AdminTransferred {
+    #[topic]
+    pub old_admin: Address,
+    pub new_admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin sets the platform fee on resales (issue #103).
 pub struct PlatformFeeUpdated {
     #[topic]
     pub admin: Address,
     pub fee_bps: u32,
-}
-
-#[contractevent]
-#[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when an owner starts an auction for a ticket (issue #105).
-pub struct AuctionStarted {
-    #[topic]
-    pub ticket_id: u64,
-    pub seller: Address,
-    pub reserve_price: i128,
-    pub ends_at: u64,
-}
-
-#[contractevent]
-#[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when a bid becomes the highest bid on an auction (issue #105).
-pub struct BidPlaced {
-    #[topic]
-    pub ticket_id: u64,
-    pub bidder: Address,
-    pub amount: i128,
-}
-
-#[contractevent]
-#[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when an auction settles with a winning bid (issue #105).
-pub struct AuctionSettled {
-    #[topic]
-    pub ticket_id: u64,
-    pub buyer: Address,
-    pub amount: i128,
-}
-
-#[contractevent]
-#[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when a buyer makes an offer on a listed ticket (issue #106).
-pub struct OfferMade {
-    #[topic]
-    pub ticket_id: u64,
-    pub buyer: Address,
-    pub amount: i128,
-}
-
-#[contractevent]
-#[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when an open offer is cancelled and its funds returned (issue #106).
-pub struct OfferCancelled {
-    #[topic]
-    pub ticket_id: u64,
-    pub buyer: Address,
-    pub amount: i128,
-}
-
-#[contractevent]
-#[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when the owner accepts an offer and the ticket changes hands (issue #106).
-pub struct OfferAccepted {
-    #[topic]
-    pub ticket_id: u64,
-    pub buyer: Address,
-    pub amount: i128,
+    pub recipient: Address,
 }
 
 #[contractevent]

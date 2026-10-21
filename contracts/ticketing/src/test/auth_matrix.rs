@@ -633,3 +633,60 @@ fn burn_used_ticket_requires_auth() {
         client.try_burn_used_ticket(&organizer, &ticket_id)
     );
 }
+
+#[test]
+fn upgrade_requires_auth() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let new_hash = super::upgrade::upload_second_wasm(&env);
+
+    assert_requires_auth!(
+        env,
+        client,
+        &admin,
+        "upgrade",
+        client.try_upgrade(&admin, &new_hash)
+    );
+}
+
+#[test]
+fn propose_admin_requires_auth() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let new_admin = Address::generate(&env);
+
+    assert_requires_auth!(
+        env,
+        client,
+        &admin,
+        "propose_admin",
+        client.try_propose_admin(&admin, &new_admin)
+    );
+}
+
+#[test]
+fn accept_admin_requires_auth() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let new_admin = Address::generate(&env);
+    client.propose_admin(&admin, &new_admin);
+
+    assert_requires_auth!(
+        env,
+        client,
+        &new_admin,
+        "accept_admin",
+        client.try_accept_admin(&new_admin)
+    );
+}
+
+#[test]
+fn set_platform_fee_requires_auth() {
+    let (env, client, _token, _token_asset, admin, _organizer) = setup();
+    let platform = Address::generate(&env);
+
+    assert_requires_auth!(
+        env,
+        client,
+        &admin,
+        "set_platform_fee",
+        client.try_set_platform_fee(&admin, &250, &platform)
+    );
+}
