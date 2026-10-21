@@ -1,17 +1,22 @@
 # Docs index
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — storage layout and auth model
+- [STORAGE_LAYOUT.md](STORAGE_LAYOUT.md) — every DataKey, its type, storage kind and TTL (issue #50)
 - [CONTRACT_API.md](CONTRACT_API.md) — function reference
 - [ERRORS.md](ERRORS.md) — full error table with retry semantics
 - [STORAGE_TTL.md](STORAGE_TTL.md) — storage TTL/archival policy
 - [EVENTS.md](EVENTS.md) — on-chain events
+- [../examples/indexer](../examples/indexer/README.md) — sample event indexer that decodes events with the release spec
 - [INTEGRATION.md](INTEGRATION.md) — integration guide for backend developers
 - [THREAT_MODEL.md](THREAT_MODEL.md) — assets, trust boundaries, and residual risks
 - [ORGANIZER_ALLOWLIST.md](ORGANIZER_ALLOWLIST.md) — who may create events, and why
 - [TESTING.md](TESTING.md) — test suite coverage
 - [DEPLOYMENT.md](DEPLOYMENT.md) — deployment checklist
+- [MONITORING.md](MONITORING.md) — mainnet metrics, alerts and dashboards
+- [../scripts/plugins](../scripts/plugins/README.md) — `stellar tickets` CLI plugin for admin tasks
 - [../DEPLOYMENTS.md](../DEPLOYMENTS.md) — deployment records and template
 - [UPGRADES.md](UPGRADES.md) — why there's no upgrade hook
+- [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) — migrating to a new contract id when a deployment must be replaced
 - [GAS_AND_FEES.md](GAS_AND_FEES.md) — fee model
 - [INDUSTRIES.md](INDUSTRIES.md) — supported categories
 - [GLOSSARY.md](GLOSSARY.md) — terminology

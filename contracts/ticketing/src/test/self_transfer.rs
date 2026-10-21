@@ -127,3 +127,74 @@ fn buy_resale_still_allows_a_third_party_purchase() {
     assert_eq!(ticket.resale_price, 0);
     assert_eq!(ticket.transfers, 1);
 }
+
+#[test]
+fn transfer_batch_rejects_self_transfer() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "A12"),
+        &1_000i128,
+    );
+
+    let mut batch = Vec::new(&env);
+    batch.push_back(ticket_id);
+
+    let result = client.try_transfer_batch(&owner, &batch, &owner);
+    assert_eq!(result, Err(Ok(Error::SelfTransfer)));
+}
+
+#[test]
+fn transfer_batch_self_transfer_leaves_tickets_untouched() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "A12"),
+        &1_000i128,
+    );
+
+    let mut batch = Vec::new(&env);
+    batch.push_back(ticket_id);
+
+    let _ = client.try_transfer_batch(&owner, &batch, &owner);
+
+    let ticket = client.get_ticket(&ticket_id);
+    assert_eq!(ticket.owner, owner);
+    assert_eq!(ticket.transfers, 0);
+    assert_eq!(ticket.status, TicketStatus::Valid);
+}
+
+#[test]
+fn transfer_batch_still_allows_real_transfer() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let ticket_id = client.issue_ticket(
+        &organizer,
+        &1,
+        &owner,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "A12"),
+        &1_000i128,
+    );
+
+    let mut batch = Vec::new(&env);
+    batch.push_back(ticket_id);
+
+    client.transfer_batch(&owner, &batch, &recipient);
+
+    let ticket = client.get_ticket(&ticket_id);
+    assert_eq!(ticket.owner, recipient);
+    assert_eq!(ticket.transfers, 1);
+}

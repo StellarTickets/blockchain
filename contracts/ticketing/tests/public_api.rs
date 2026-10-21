@@ -30,6 +30,7 @@ fn public_types_keep_their_crate_root_paths_and_ticket_encoding() {
         original_price: 1_000,
         resale_price: 0,
         transfers: 0,
+        purchased_at: 0,
     };
     let encoded: Val = ticket.clone().into_val(&env);
     assert_eq!(Ticket::try_from_val(&env, &encoded).unwrap(), ticket);

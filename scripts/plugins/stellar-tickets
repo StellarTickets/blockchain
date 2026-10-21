@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# stellar-cli plugin for common ticketing-contract admin tasks (issue #62).
+#
+# Put this directory on PATH and the CLI picks it up as `stellar tickets`:
+#
+#   export PATH="$PWD/scripts/plugins:$PATH"
+#   stellar tickets help
+#
+# It wraps `stellar contract invoke` so operators do not have to retype the
+# contract ID, network, source and admin arguments for every call. See
+# scripts/plugins/README.md for the full command reference.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: stellar tickets <command> [args] [options]
+
+Read-only commands (simulated, never submitted):
+  status                        paused flag, platform fee, ticket count, token decimals
+  is-organizer <address>        whether an address may create events
+
+Admin commands (signed by --source, which must be the contract admin):
+  pause | unpause               stop or resume state-changing calls
+  approve-organizer <address>   add an organizer to the allowlist
+  revoke-organizer <address>    remove an organizer from the allowlist
+  set-fee <bps>                 set the primary-sale platform fee
+  set-throttle <ledgers>        minimum ledgers between purchases (0 disables)
+  propose-token <contract-id>   propose a new payment token (time-locked)
+  apply-token                   apply the proposed payment token once due
+
+Maintenance (any funded account may submit):
+  bump-ticket <ticket-id>...    extend the storage TTL of one or more tickets
+
+Options (or the environment variable in brackets):
+  --id <contract-id>     contract to call          [STELLAR_TICKETS_CONTRACT_ID]
+  --network <name>       testnet|futurenet|mainnet [STELLAR_NETWORK]
+  --source <identity>    signing identity or key   [STELLAR_ACCOUNT]
+  --admin <address>      admin address, defaults to --source
+  --build-only           print the unsigned transaction XDR instead of
+                         submitting it, e.g. for a multisig admin
+  --yes                  skip the mainnet confirmation prompt
+USAGE
+}
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+COMMAND="${1:-help}"
+[ "$#" -gt 0 ] && shift
+
+CONTRACT_ID="${STELLAR_TICKETS_CONTRACT_ID:-}"
+NETWORK="${STELLAR_NETWORK:-}"
+SOURCE="${STELLAR_ACCOUNT:-}"
+ADMIN=""
+BUILD_ONLY=false
+ASSUME_YES=false
+ARGS=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) CONTRACT_ID="${2:?--id needs a value}"; shift ;;
+    --network) NETWORK="${2:?--network needs a value}"; shift ;;
+    --source) SOURCE="${2:?--source needs a value}"; shift ;;
+    --admin) ADMIN="${2:?--admin needs a value}"; shift ;;
+    --build-only) BUILD_ONLY=true ;;
+    --yes) ASSUME_YES=true ;;
+    -h|--help) usage; exit 0 ;;
+    --*) die "unknown option '$1'. Run 'stellar tickets help'." ;;
+    *) ARGS+=("$1") ;;
+  esac
+  shift
+done
+
+case "$COMMAND" in
+  help|-h|--help) usage; exit 0 ;;
+esac
+
+command -v stellar >/dev/null 2>&1 \
+  || die "'stellar' CLI is not installed. Install it via: cargo install --locked stellar-cli --version ^27"
+[ -n "$CONTRACT_ID" ] || die "no contract ID. Pass --id or set STELLAR_TICKETS_CONTRACT_ID."
+[ -n "$NETWORK" ] || die "no network. Pass --network or set STELLAR_NETWORK."
+[ -n "$SOURCE" ] || die "no source identity. Pass --source or set STELLAR_ACCOUNT."
+case "$NETWORK" in
+  testnet|futurenet|mainnet) ;;
+  *) die "invalid network '$NETWORK'. Supported networks are: testnet, futurenet, mainnet." ;;
+esac
+ADMIN="${ADMIN:-$SOURCE}"
+
+expect_args() {
+  [ "${#ARGS[@]}" -eq "$1" ] || die "'$COMMAND' takes $1 argument(s), got ${#ARGS[@]}. Run 'stellar tickets help'."
+}
+
+# Simulates a call and prints its return value; nothing is submitted.
+read_call() {
+  stellar contract invoke --id "$CONTRACT_ID" --source "$SOURCE" --network "$NETWORK" \
+    --send no -- "$@"
+}
+
+# Signs and submits a call, or prints its unsigned XDR with --build-only.
+write_call() {
+  if [ "$BUILD_ONLY" = true ]; then
+    stellar contract invoke --id "$CONTRACT_ID" --source "$SOURCE" --network "$NETWORK" \
+      --build-only -- "$@"
+    return
+  fi
+  if [ "$NETWORK" = "mainnet" ] && [ "$ASSUME_YES" != true ]; then
+    echo "About to submit on MAINNET to $CONTRACT_ID: $*" >&2
+    read -r -p "Type 'mainnet' to continue: " answer
+    [ "$answer" = "mainnet" ] || die "aborted."
+  fi
+  stellar contract invoke --id "$CONTRACT_ID" --source "$SOURCE" --network "$NETWORK" \
+    -- "$@"
+}
+
+case "$COMMAND" in
+  status)
+    expect_args 0
+    echo "paused:            $(read_call is_paused)"
+    echo "platform_fee_bps:  $(read_call platform_fee_bps)"
+    echo "total_tickets:     $(read_call total_tickets)"
+    echo "token_decimals:    $(read_call token_decimals)"
+    ;;
+  is-organizer)
+    expect_args 1
+    read_call is_approved_organizer --organizer "${ARGS[0]}"
+    ;;
+  pause | unpause)
+    expect_args 0
+    write_call "$COMMAND" --admin "$ADMIN"
+    ;;
+  approve-organizer | revoke-organizer)
+    expect_args 1
+    write_call "${COMMAND//-/_}" --admin "$ADMIN" --organizer "${ARGS[0]}"
+    ;;
+  set-fee)
+    expect_args 1
+    write_call set_platform_fee_bps --admin "$ADMIN" --fee-bps "${ARGS[0]}"
+    ;;
+  set-throttle)
+    expect_args 1
+    write_call set_purchase_throttle --admin "$ADMIN" --min-ledger-spacing "${ARGS[0]}"
+    ;;
+  propose-token)
+    expect_args 1
+    write_call propose_payment_token --admin "$ADMIN" --new-token "${ARGS[0]}"
+    ;;
+  apply-token)
+    expect_args 0
+    write_call apply_payment_token --admin "$ADMIN"
+    ;;
+  bump-ticket)
+    [ "${#ARGS[@]}" -gt 0 ] || die "'bump-ticket' needs at least one ticket ID."
+    for ticket_id in "${ARGS[@]}"; do
+      write_call extend_ticket_ttl --ticket-id "$ticket_id"
+    done
+    ;;
+  *)
+    die "unknown command '$COMMAND'. Run 'stellar tickets help'."
+    ;;
+esac

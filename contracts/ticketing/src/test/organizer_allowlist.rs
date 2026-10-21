@@ -24,6 +24,10 @@ fn try_create(
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     )
 }
@@ -60,6 +64,10 @@ fn create_event_with_options_also_requires_an_approved_organizer() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
         &None,
         &None,

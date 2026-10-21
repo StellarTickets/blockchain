@@ -22,6 +22,10 @@ fn create_event_rejects_a_duplicate_event_id() {
             starts_at: 10_000,
             transfer_freeze_seconds: 0,
             resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(duplicate, Err(Ok(Error::EventAlreadyExists)));
@@ -71,6 +75,10 @@ fn create_event_rejects_a_royalty_above_10_000_bps() {
             starts_at: 10_000,
             transfer_freeze_seconds: 0,
             resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(bad_royalty, Err(Ok(Error::InvalidRoyalty)));
@@ -92,6 +100,10 @@ fn create_event_rejects_past_or_current_timestamp() {
             starts_at: 999,
             transfer_freeze_seconds: 0,
             resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(in_the_past, Err(Ok(Error::InvalidEventTime)));
@@ -107,6 +119,10 @@ fn create_event_rejects_past_or_current_timestamp() {
             starts_at: 1_000,
             transfer_freeze_seconds: 0,
             resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(right_now, Err(Ok(Error::InvalidEventTime)));
@@ -152,6 +168,10 @@ fn events_with_identical_names_have_independent_state() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 
@@ -166,6 +186,10 @@ fn events_with_identical_names_have_independent_state() {
             starts_at: 20_000,
             transfer_freeze_seconds: 150,
             resale_cutoff_seconds: 300,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 
@@ -228,6 +252,10 @@ fn events_and_tickets_with_unicode_names_and_categories() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 
@@ -584,6 +612,10 @@ fn create_event_accepts_a_royalty_of_exactly_10_000_bps() {
             starts_at: 10_000,
             transfer_freeze_seconds: 0,
             resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(client.get_event(&1).royalty_bps, 10_000);
@@ -608,6 +640,10 @@ fn create_event_rejects_zero_max_resale_multiplier() {
             starts_at: 10_000,
             transfer_freeze_seconds: 0,
             resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(result, Err(Ok(Error::InvalidMultiplier)));

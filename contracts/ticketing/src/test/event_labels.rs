@@ -22,6 +22,10 @@ fn create_event_rejects_empty_name() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(result, Err(Ok(Error::EmptyNameOrCategory)));
@@ -42,6 +46,10 @@ fn create_event_rejects_empty_category() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(result, Err(Ok(Error::EmptyNameOrCategory)));
@@ -63,6 +71,10 @@ fn create_event_rejects_whitespace_free_single_char_boundary() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     let event = client.get_event(&1);
@@ -88,6 +100,10 @@ fn create_event_accepts_labels_at_the_maximum_length() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     let event = client.get_event(&1);
@@ -111,6 +127,10 @@ fn create_event_rejects_oversized_name() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(result, Err(Ok(Error::StringTooLong)));
@@ -132,6 +152,10 @@ fn create_event_rejects_oversized_category() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(result, Err(Ok(Error::StringTooLong)));
@@ -152,6 +176,10 @@ fn create_event_with_options_rejects_empty_name() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
         &None,
         &None,
@@ -174,6 +202,10 @@ fn rejected_event_is_not_persisted() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 

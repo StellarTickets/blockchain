@@ -229,6 +229,10 @@ fn buy_resale_with_zero_royalty_pays_the_seller_in_full() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     let seller = Address::generate(&env);
@@ -548,6 +552,10 @@ fn resale_is_closed_from_the_start_when_cutoff_exceeds_event_start() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: u64::MAX,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     let seller = Address::generate(&env);
@@ -921,7 +929,10 @@ fn test_get_resale_price_cap() {
     assert_eq!(cap, 1_200i128);
 
     // Error on nonexistent ticket
-    assert_eq!(client.try_get_resale_price_cap(&999), Err(Ok(Error::TicketNotFound)));
+    assert_eq!(
+        client.try_get_resale_price_cap(&999),
+        Err(Ok(Error::TicketNotFound))
+    );
 }
 
 #[test]
@@ -941,7 +952,10 @@ fn test_quote_resale() {
     );
 
     // Cannot quote resale for a ticket not listed for resale
-    assert_eq!(client.try_quote_resale(&ticket_id), Err(Ok(Error::NotForResale)));
+    assert_eq!(
+        client.try_quote_resale(&ticket_id),
+        Err(Ok(Error::NotForResale))
+    );
 
     // List for resale at 1100
     client.list_for_resale(&seller, &ticket_id, &1_100i128);
@@ -981,7 +995,10 @@ fn test_math_overflow_in_resale_cap_and_royalty() {
     );
 
     // get_resale_price_cap must return MathOverflow error
-    assert_eq!(client.try_get_resale_price_cap(&ticket_id), Err(Ok(Error::MathOverflow)));
+    assert_eq!(
+        client.try_get_resale_price_cap(&ticket_id),
+        Err(Ok(Error::MathOverflow))
+    );
 
     // list_for_resale must return MathOverflow error
     assert_eq!(

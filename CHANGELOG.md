@@ -21,19 +21,30 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   for the dependency versioning policy and upgrade procedure.
 
 ### Added
-- Contract version: `version()` returns the crate version from `Cargo.toml`
-  (#102).
-- Admin-only upgrade: `upgrade(admin, new_wasm_hash)` replaces the contract
-  code and keeps storage. See [docs/UPGRADES.md](docs/UPGRADES.md) for the
-  procedure and state migration rules (#101).
-- Two-step admin transfer: `propose_admin` nominates a successor and
-  `accept_admin` completes the handover, which needs the nominee's auth
-  (#100).
-- Platform fee on resales: `set_platform_fee(admin, fee_bps, recipient)` takes
-  a share of each resale from the seller's proceeds, paid to `recipient`.
-  Fee plus any event royalty may not exceed 10000 bps (`InvalidPlatformFee`).
-  `quote_resale` now reports a `seller_amount` net of the fee. `platform_fee`
-  reads the setting (#103).
+- Releases attach the contract spec as `stellar_tickets_ticketing.spec.json`
+  and `.spec.xdr`, exported by `scripts/export-spec.sh` (`make spec`) (#60).
+- Sample event indexer in `examples/indexer` that decodes events from the
+  release spec (#58).
+- `stellar tickets` CLI plugin in `scripts/plugins` for admin and TTL
+  maintenance calls, with a mainnet prompt and `--build-only` for multisig
+  admins (#62).
+- Mainnet monitoring guide, `docs/MONITORING.md` (#64).
+- Primary-sale platform fee: `set_platform_fee_bps` takes a fee in basis points
+  from each primary sale and pays it to the admin. The organizer receives the
+  rest, through escrow when the event uses it. `platform_fee_bps` reads it
+  (#104).
+- Timed resale auctions: `start_auction`, `place_bid`, `settle_auction` and
+  `get_auction`. Bids are escrowed, each bid refunds the bidder it displaces,
+  and the highest bid wins at settlement. Bids stay within the resale price cap.
+  While an auction runs, the ticket cannot be transferred, listed, sold at a
+  fixed price or gifted. `cancel_resale` withdraws an auction with no bids
+  (#105).
+- Resale offers: `make_offer` escrows a buyer's offer on a listed ticket, and
+  `accept_offer` settles it for the owner. `cancel_offer` lets the owner reject
+  an offer or lets the buyer withdraw it. `get_offer` reads it (#106).
+- Operator approvals: `approve`, `revoke_approval`, `get_approved` and
+  `transfer_from` let one operator per ticket move it on the owner's behalf.
+  Any change of owner clears the approval (#107).
 - Multi-use tickets (passes): `set_ticket_max_uses` sets how many entries a
   ticket allows (default 1). `check_in` and `check_in_batch` count each entry,
   and a ticket becomes `Used` only once its uses are exhausted. `pass_out`

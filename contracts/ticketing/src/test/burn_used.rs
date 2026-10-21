@@ -9,11 +9,7 @@ use super::*;
 /// `make_event` creates events starting at this timestamp.
 const STARTS_AT: u64 = 10_000;
 
-fn used_ticket(
-    env: &Env,
-    client: &TicketingContractClient,
-    organizer: &Address,
-) -> (Address, u64) {
+fn used_ticket(env: &Env, client: &TicketingContractClient, organizer: &Address) -> (Address, u64) {
     make_event(env, client, organizer, 1);
     let owner = Address::generate(env);
     let ticket_id = issue_sample_ticket(env, client, organizer, 1, &owner, 1_000);
@@ -34,7 +30,10 @@ fn burn_removes_a_used_ticket_once_retention_has_elapsed() {
 
     client.burn_used_ticket(&organizer, &ticket_id);
 
-    assert_eq!(client.try_get_ticket(&ticket_id), Err(Ok(Error::TicketNotFound)));
+    assert_eq!(
+        client.try_get_ticket(&ticket_id),
+        Err(Ok(Error::TicketNotFound))
+    );
 }
 
 #[test]
@@ -51,7 +50,10 @@ fn burn_is_allowed_at_the_exact_retention_boundary() {
     set_time_after_retention(&env);
     client.burn_used_ticket(&organizer, &ticket_id);
 
-    assert_eq!(client.try_get_ticket(&ticket_id), Err(Ok(Error::TicketNotFound)));
+    assert_eq!(
+        client.try_get_ticket(&ticket_id),
+        Err(Ok(Error::TicketNotFound))
+    );
 }
 
 #[test]
@@ -144,7 +146,10 @@ fn burn_removes_the_metadata_uri_with_the_ticket() {
 
     client.burn_used_ticket(&organizer, &ticket_id);
 
-    assert_eq!(client.try_token_uri(&ticket_id), Err(Ok(Error::TicketNotFound)));
+    assert_eq!(
+        client.try_token_uri(&ticket_id),
+        Err(Ok(Error::TicketNotFound))
+    );
 }
 
 #[test]

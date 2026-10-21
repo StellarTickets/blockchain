@@ -321,7 +321,11 @@ Once deployed, hand `<contract-id>` to the backend as its
 ├── docs                          # architecture, API, deployment, FAQ, glossary
 ├── scripts
 │   ├── build.sh
-│   └── deploy.sh
+│   ├── deploy.sh
+│   ├── export-spec.sh            # contract spec JSON/XDR for releases
+│   └── plugins/                  # `stellar tickets` admin plugin
+├── examples
+│   └── indexer/                  # sample event indexer
 ├── .github                       # CI, issue/PR templates, dependabot
 ├── Cargo.toml                     # workspace manifest
 ├── DEPLOYMENTS.md                # network deployment records and template
@@ -345,6 +349,7 @@ The [`docs/`](docs/README.md) directory goes deeper on specific topics:
 | [`THREAT_MODEL.md`](docs/THREAT_MODEL.md) | Assets, trust boundaries, attacks and residual risks      |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md)     | Production deployment notes                               |
 | [`EVENTS.md`](docs/EVENTS.md)             | On-chain event schema for indexers                        |
+| [`MONITORING.md`](docs/MONITORING.md)     | Mainnet metrics, alerts and dashboards                    |
 | [`GAS_AND_FEES.md`](docs/GAS_AND_FEES.md) | Soroban fee model as it applies here                      |
 | [`GLOSSARY.md`](docs/GLOSSARY.md)         | Extended Soroban/Stellar terminology                      |
 | [`INDUSTRIES.md`](docs/INDUSTRIES.md)     | How the 12 supported verticals map onto `category`        |

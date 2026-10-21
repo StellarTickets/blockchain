@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StellarTickets — Gate scanner example</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+      label { display: block; margin: 0.75rem 0 0.25rem; }
+      input { width: 100%; padding: 0.5rem; box-sizing: border-box; font-family: ui-monospace, monospace; }
+      button { margin: 1rem 0.5rem 0 0; padding: 0.5rem 1.25rem; cursor: pointer; font-size: 1rem; }
+      #result { margin-top: 1.5rem; padding: 1.25rem; border: 2px solid transparent; border-radius: 8px; min-height: 6rem; }
+      #result.valid { border-color: #27ae60; background: #27ae6011; }
+      #result.used { border-color: #f39c12; background: #f39c1211; }
+      #result.denied { border-color: #c0392b; background: #c0392b11; }
+      #result.unknown { border-color: #888; }
+      #verdict { font-size: 1.5rem; font-weight: 700; margin: 0 0 0.5rem; }
+      #detail { font-family: ui-monospace, monospace; font-size: 0.85rem; white-space: pre-wrap; }
+      .error { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+    <h1>StellarTickets — Gate scanner</h1>
+    <p>
+      Enter a ticket id to verify it against the deployed contract on Stellar
+      testnet. Read-only — no wallet signature required.
+    </p>
+
+    <label for="contract-id">Contract ID</label>
+    <input id="contract-id" placeholder="C..." />
+
+    <label for="ticket-id">Ticket ID</label>
+    <input id="ticket-id" type="number" placeholder="e.g. 1" />
+
+    <p style="font-size: 0.85rem; color: #888;">
+      One-time setup: open the browser console and run
+      <code>setSource("G...")</code> with any valid Stellar public key
+      (your scanner's account). The simulation is read-only and free, but
+      the RPC needs a source key to build the envelope.
+    </p>
+
+    <div>
+      <button id="btn-verify">Verify ticket</button>
+    </div>
+
+    <div id="result" class="unknown">
+      <p id="verdict">Awaiting scan</p>
+      <p id="detail"></p>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

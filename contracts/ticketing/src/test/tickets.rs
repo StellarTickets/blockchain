@@ -48,6 +48,10 @@ fn public_calls_report_not_initialized_before_setup() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_eq!(create_event, Err(Ok(Error::NotInitialized)));
@@ -605,6 +609,10 @@ fn transfer_frozen_handles_freeze_longer_than_event_lead_time() {
             starts_at: 1_000,
             transfer_freeze_seconds: 5_000,
             resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 

@@ -25,6 +25,10 @@ fn create_event_rejects_multiplier_below_face_value() {
                 starts_at: 10_000,
                 transfer_freeze_seconds: 100,
                 resale_cutoff_seconds: 200,
+                max_per_wallet: None,
+                refund_window_seconds: None,
+                presale_starts_at: None,
+                presale_ends_at: None,
             },
         );
         assert_eq!(result, Err(Ok(Error::InvalidMultiplier)));
@@ -46,6 +50,10 @@ fn create_event_accepts_multiplier_exactly_at_face_value() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 
@@ -68,6 +76,10 @@ fn create_event_accepts_multiplier_above_face_value() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 
@@ -112,6 +124,10 @@ fn create_event_with_options_rejects_multiplier_below_face_value() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
         &None,
         &None,

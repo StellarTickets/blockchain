@@ -108,7 +108,9 @@ fn count_and_list_agree() {
 
     assert_eq!(client.get_organizer_events(&organizer), 2);
     assert_eq!(
-        client.list_organizer_events(&organizer, &0, &u32::MAX).len(),
+        client
+            .list_organizer_events(&organizer, &0, &u32::MAX)
+            .len(),
         2
     );
 }

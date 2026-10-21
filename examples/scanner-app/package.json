@@ -1,0 +1,13 @@
+{
+  "name": "stellar-tickets-scanner-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gate-scanner example that verifies tickets via verify_ticket / get_ticket on testnet (issue #56)",
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes serve ."
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^12.3.0"
+  }
+}

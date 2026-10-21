@@ -90,7 +90,11 @@ fn split_entries_must_sum_to_the_royalty_bps() {
         client.try_set_royalty_splits(
             &organizer,
             &1,
-            &Some(soroban_sdk::vec![&env, (a.clone(), 300u32), (b.clone(), 100u32)]),
+            &Some(soroban_sdk::vec![
+                &env,
+                (a.clone(), 300u32),
+                (b.clone(), 100u32)
+            ]),
         ),
         Err(Ok(Error::InvalidRoyalty))
     );
@@ -146,11 +150,7 @@ fn only_the_organizer_can_set_royalty_splits() {
     let a = Address::generate(&env);
 
     assert_eq!(
-        client.try_set_royalty_splits(
-            &stranger,
-            &1,
-            &Some(soroban_sdk::vec![&env, (a, 500u32)]),
-        ),
+        client.try_set_royalty_splits(&stranger, &1, &Some(soroban_sdk::vec![&env, (a, 500u32)]),),
         Err(Ok(Error::NotOrganizer))
     );
 }

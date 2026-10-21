@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StellarTickets — Freighter wallet example</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+      label { display: block; margin: 0.75rem 0 0.25rem; }
+      input { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+      button { margin: 1rem 0.5rem 0 0; padding: 0.5rem 1rem; cursor: pointer; }
+      #log { margin-top: 1.5rem; padding: 1rem; border: 1px solid #8884; border-radius: 6px; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.85rem; min-height: 8rem; }
+      .error { color: #c0392b; }
+      .ok { color: #27ae60; }
+    </style>
+  </head>
+  <body>
+    <h1>StellarTickets — Freighter example</h1>
+    <p>
+      Connect a <a href="https://freighter.app" target="_blank" rel="noopener">Freighter</a>
+      wallet and invoke the ticketing contract on Stellar testnet.
+    </p>
+
+    <label for="contract-id">Contract ID</label>
+    <input id="contract-id" placeholder="C..." />
+
+    <label for="event-id">Event ID</label>
+    <input id="event-id" type="number" value="1" />
+
+    <div>
+      <button id="btn-connect">1. Connect wallet</button>
+      <button id="btn-read" disabled>2. Read event</button>
+      <button id="btn-buy" disabled>3. Buy ticket (purchase_primary)</button>
+    </div>
+
+    <div id="log">Ready.</div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

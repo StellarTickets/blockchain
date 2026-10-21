@@ -41,6 +41,8 @@ All of these are enforced in GitHub Actions on every push to `main`.
 - [ ] Alerts configured for unusual patterns (e.g., high revocation rate, royalty settlement failures)
 - [ ] Data reconciliation job in backend validates on-chain and database state match (see [`backend`](https://github.com/StellarTickets/backend) repo)
 
+See [`MONITORING.md`](MONITORING.md) for the metrics, alert thresholds and dashboards.
+
 **What to monitor:**
 - Ledger TTL evictions (events expiring from storage)
 - Token contract failures during primary sales or resales
@@ -124,11 +126,14 @@ stellar contract invoke --id <contract-id> --network mainnet \
 4. Reissue affected tickets on the new contract (backend migration job)
 5. Document the incident and root cause
 
-There is no pause mechanism. The admin can replace the contract code with `upgrade`, which keeps storage; see [UPGRADES.md](UPGRADES.md) for the procedure and migration rules.
+There is no upgrade mechanism; contracts are immutable once deployed. The
+admin can `pause` the contract to freeze state while migrating. The full
+migration runbook is in [`DISASTER_RECOVERY.md`](DISASTER_RECOVERY.md).
 
 ## References
 
 - [`AUDIT.md`](AUDIT.md) — Audit scope and build instructions
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — Testnet setup, dry-run, and multisig configuration
+- [`MONITORING.md`](MONITORING.md) — Metrics, alerts and dashboards for mainnet
 - [`TESTING.md`](TESTING.md) — Unit test coverage and running locally
 - [`README.md`](../README.md) — Project overview and quick-start

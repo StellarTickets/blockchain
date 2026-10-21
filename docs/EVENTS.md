@@ -29,6 +29,8 @@ Emitted by `check_in`.
 
 Indexers and the backend's reconciliation job can subscribe to these
 instead of polling `get_ticket` for every ticket on every block.
+[`examples/indexer`](../examples/indexer/README.md) is a sample that decodes
+every event below using the contract spec attached to each release.
 
 ## `TicketTransferred`
 

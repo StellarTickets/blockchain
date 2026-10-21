@@ -18,14 +18,19 @@ tickets, so they only reject revoked tickets.
 
 ## Storage layout
 
-The `ticketing` contract uses instance storage and persistent storage entries:
+The `ticketing` contract uses instance storage and persistent storage entries.
+The complete reference — every `DataKey` variant, its value type, storage kind,
+and when its TTL is extended — lives in [`STORAGE_LAYOUT.md`](STORAGE_LAYOUT.md).
+That page is kept in lockstep with `lib.rs`; this section summarises the
+rationale only.
 
-- **Instance storage**: `Admin`, `PaymentToken`, `TokenDecimals`, `NextTicketId`, `MinPurchaseSpacing`, `PendingPaymentToken` — set at `initialize` and read on nearly every call.
+- **Instance storage**: `Admin`, `PaymentToken`, `TokenDecimals`, `NextTicketId`, `MinPurchaseSpacing`, `PendingPaymentToken`, `Paused` — set at `initialize` and read on nearly every call.
 - **Persistent storage, keyed by `Event(u64)`**: one entry per event, holding the organizer address and resale policy. The issuance counter is kept separately in `TicketsIssued(u64)`, so minting does not rewrite the full event record.
 - **Persistent storage, keyed by `OrganizerEvents(Address)`**: one count per organizer, incremented when an event is created.
 - **Persistent storage, keyed by `Ticket(u64)`**: one entry per ticket, holding owner, tier, seat, status, and pricing.
 - **Persistent storage, keyed by `GiftClaim(u64)`**: one entry per active gift claim, holding the secret hash and expiry.
 - **Persistent storage, keyed by `LastPurchaseLedger(Address)`**: one entry per buyer, tracking the ledger sequence of their last primary purchase for the purchase throttle.
+- **Persistent storage, keyed by the owner index** (`OwnerBalance`, `OwnerTicketCount`, `OwnerTicketAt`, `TicketOwnerPos`): a swap-remove index backing SEP-50 `balance` and `tickets_of` (issue #111). The naming convention for index keys is documented in [`STORAGE_LAYOUT.md`](STORAGE_LAYOUT.md#index-naming-convention-issue-52).
 
 ### Storage diagram
 

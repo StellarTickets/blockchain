@@ -166,7 +166,7 @@ renew storage TTL. A successful query does not reserve admission: submit
 `check_in` and wait for success to prevent re-entry.
 
 Use `get_ticket` for ownership details. The legacy `verify_ticket` alias remains
-available. `verify_tickets` takes up to 50 ids in one call for batch listing and
+available. `verify_tickets` takes up to 35 ids in one call for batch listing and
 group check-in views.
 
 ### Write path
@@ -193,9 +193,9 @@ The pattern used in this repo's reference client is in
 
 ### Batching
 
-`MAX_BATCH_SIZE` is **50**. `transfer_batch`, `check_in_batch`,
+`MAX_BATCH_SIZE` is **35**. `transfer_batch`, `check_in_batch`,
 `revoke_batch` and `verify_tickets` all reject an empty vector
-(`EmptyBatch`) and more than 50 ids (`BatchTooLarge`), and they are
+(`EmptyBatch`) and more than 35 ids (`BatchTooLarge`), and they are
 all-or-nothing: one bad id in a batch of 50 rolls the whole
 transaction back. Chunk client batches at 50, and on failure re-submit
 per id to isolate the offender.

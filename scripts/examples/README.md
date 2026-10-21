@@ -1,8 +1,8 @@
 # Example clients
 
 Reference scripts that drive the ticketing contract end to end on the
-Stellar **testnet** (issues #225 and #226): they issue one ticket and then
-verify it.
+Stellar **testnet** (issues #225, #226, #54 and #56): they issue one ticket
+and then verify it, or connect a browser wallet / scanner app.
 
 ## Prerequisites
 
@@ -62,4 +62,24 @@ cargo run --manifest-path examples/stellar-cli-client/Cargo.toml -- \
 It submits `issue_ticket` with the given identity as organizer, then reads the
 ticket back with a simulated `verify_ticket` (`--send no`).
 
+## Browser wallet (`examples/freighter-wallet`, issue #54)
+
+Connects a [Freighter] wallet, signs with the extension, and submits
+`purchase_primary` on testnet. See that directory's README for setup.
+
+```bash
+cd examples/freighter-wallet && npm install && npm start
+```
+
+## Gate scanner (`examples/scanner-app`, issue #56)
+
+Read-only scanner UI that verifies a ticket id via `get_ticket` /
+`verify_ticket` and renders an admit / deny verdict. See that directory's
+README for setup.
+
+```bash
+cd examples/scanner-app && npm install && npm start
+```
+
 [stellar CLI]: https://developers.stellar.org/docs/tools/cli/stellar-cli
+[Freighter]: https://freighter.app

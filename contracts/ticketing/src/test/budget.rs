@@ -57,6 +57,10 @@ fn create_event_stays_under_cost_thresholds() {
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
     assert_budget_under_thresholds(&env);

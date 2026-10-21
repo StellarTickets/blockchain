@@ -134,3 +134,56 @@ pub struct PlatformFeeUpdated {
     pub fee_bps: u32,
     pub recipient: Address,
 }
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `create_event` and `create_event_with_options` after the event
+/// is saved (issue #119).
+pub struct EventCreated {
+    #[topic]
+    pub organizer: Address,
+    #[topic]
+    pub event_id: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `purchase_primary` after the ticket is minted (issue #118).
+pub struct PrimarySale {
+    #[topic]
+    pub ticket_id: u64,
+    pub buyer: Address,
+    pub price: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `list_for_resale` after the listing is saved (issue #116).
+pub struct TicketListed {
+    #[topic]
+    pub ticket_id: u64,
+    pub owner: Address,
+    pub price: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `cancel_resale` after the listing is removed (issue #116).
+pub struct ListingCancelled {
+    #[topic]
+    pub ticket_id: u64,
+    pub owner: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `buy_resale` after ownership and the royalty split are settled
+/// (issue #117).
+pub struct TicketResold {
+    #[topic]
+    pub ticket_id: u64,
+    pub seller: Address,
+    pub buyer: Address,
+    pub price: i128,
+    pub royalty: i128,
+}

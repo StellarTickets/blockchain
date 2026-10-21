@@ -130,23 +130,66 @@ pub enum Error {
     TierSoldOut = 59,
     /// The max uses is zero, or below the number of uses already recorded (issue #74).
     InvalidMaxUses = 60,
-    /// The ticket's tier may not enter the zone being checked in at (issue #80).
-    ZoneNotAllowed = 66,
-    /// Too many zones, or a zone label is empty or too long (issue #80).
-    InvalidZones = 62,
-    /// The primary sale has not opened yet (issue #94).
-    SaleNotStarted = 63,
-    /// The primary sale has closed (issue #94).
-    SaleEnded = 64,
-    /// The sale window ends at or before it starts (issue #94).
-    InvalidSaleWindow = 65,
     /// A gift claim already exists for the ticket and has not yet been claimed or expired.
-    GiftClaimAlreadyExists = 61,
-    /// No admin transfer is pending, so there is nothing to accept (issue #100).
-    NoPendingAdmin = 67,
-    /// The caller is not the admin named by the pending transfer (issue #100).
-    NotPendingAdmin = 68,
-    /// The platform fee exceeds 100%, or the fee plus an event's royalty would
-    /// exceed 100% of the resale price (issue #103).
-    InvalidPlatformFee = 69,
+    GiftClaimAlreadyExists = 66,
+    /// The contract is currently paused by the admin.
+    ContractPaused = 67,
+    /// The refund window for this ticket has expired.
+    RefundWindowExpired = 68,
+    /// The ticket has already been refunded.
+    AlreadyRefunded = 69,
+    /// The wallet has reached its purchase limit for this event.
+    PurchaseLimitExceeded = 70,
+    /// The caller is not on the event's allowlist during presale.
+    NotOnAllowlist = 71,
+    /// The presale window has not started yet.
+    PresaleNotStarted = 72,
+    /// The presale window has ended.
+    PresaleEnded = 73,
+    /// The platform fee is above 100% (10_000 bps) (issue #104).
+    InvalidPlatformFee = 74,
+    /// No auction exists for the ticket (issue #105).
+    AuctionNotFound = 75,
+    /// The auction has closed, so bids are no longer accepted (issue #105).
+    AuctionEnded = 76,
+    /// The auction is still open and cannot be settled yet (issue #105).
+    AuctionNotEnded = 77,
+    /// The ticket has an open auction, so this operation is blocked until it settles (issue #105).
+    AuctionActive = 78,
+    /// The auction already has a bid and can no longer be cancelled (issue #105).
+    AuctionHasBids = 79,
+    /// The auction end is not in the future, or falls after resale closes (issue #105).
+    InvalidAuctionEnd = 80,
+    /// The bid does not beat the highest bid, or does not meet the reserve (issue #105).
+    BidTooLow = 81,
+    /// The buyer has no open offer on the ticket (issue #106).
+    OfferNotFound = 82,
+    /// The buyer already has an open offer on the ticket (issue #106).
+    OfferAlreadyExists = 83,
+    /// The spender is not the operator approved for the ticket (issue #107).
+    NotApproved = 84,
+    /// The payment token cannot change while resale bids or offers are held (issues #105, #106).
+    ResaleFundsOutstanding = 85,
+    /// The ticket's tier may not enter the zone being checked in at (issue #80).
+    ZoneNotAllowed = 86,
+    /// Too many zones, or a zone label is empty or too long (issue #80).
+    InvalidZones = 87,
+    /// The primary sale has not opened yet (issue #94).
+    SaleNotStarted = 88,
+    /// The primary sale has closed (issue #94).
+    SaleEnded = 89,
+    /// The sale window ends at or before it starts (issue #94).
+    InvalidSaleWindow = 90,
+    /// The ticket's validity window has not opened yet (issue #72).
+    TicketNotYetValid = 91,
+    /// The ticket's validity window has closed (issue #72).
+    TicketValidityEnded = 92,
+    /// The validity window ends at or before it starts (issue #72).
+    InvalidValidityWindow = 93,
+    /// Too many perks, or a perk label is empty or too long (issue #68).
+    InvalidPerks = 94,
+    /// An event metadata key or value is empty or too long (issue #70).
+    InvalidEventMetadata = 95,
+    /// The event already holds `MAX_EVENT_METADATA_ENTRIES` metadata entries (issue #70).
+    EventMetadataFull = 96,
 }

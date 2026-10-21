@@ -70,7 +70,12 @@ fn purchase_primary_respects_the_tier_cap() {
     client.purchase_primary(&first, &1, &tier(&env, "GA"), &String::from_str(&env, "A1"));
 
     assert_eq!(
-        client.try_purchase_primary(&second, &1, &tier(&env, "GA"), &String::from_str(&env, "A2")),
+        client.try_purchase_primary(
+            &second,
+            &1,
+            &tier(&env, "GA"),
+            &String::from_str(&env, "A2")
+        ),
         Err(Ok(Error::TierSoldOut))
     );
 }
@@ -112,7 +117,14 @@ fn tickets_issued_before_a_cap_is_set_count_toward_it() {
     // Equal to the issued count leaves no room but is not below it.
     client.set_tier_capacity(&organizer, &1, &tier(&env, "GA"), &Some(2u64));
     assert_eq!(
-        client.try_issue_ticket(&organizer, &1, &owner, &tier(&env, "GA"), &seat(&env), &1_000i128),
+        client.try_issue_ticket(
+            &organizer,
+            &1,
+            &owner,
+            &tier(&env, "GA"),
+            &seat(&env),
+            &1_000i128
+        ),
         Err(Ok(Error::TierSoldOut))
     );
 }

@@ -291,6 +291,31 @@ pub struct PlatformFee {
 }
 
 /// Storage keys for all contract state.
+///
+/// # Index naming convention
+///
+/// Index-style variants follow three shapes so a reader can tell how a key
+/// is scanned without looking up its call sites:
+///
+/// 1. **Ordered list slots** — `<Subject>At(subject_id, index)` returns the
+///    id stored at a zero-based position, with a companion
+///    `<Subject>Count(subject_id)` or `<Subject>Events(subject_id)` giving
+///    the list length. Examples: `OwnerTicketAt` / `OwnerTicketCount`,
+///    `OrganizerEventAt` / `OrganizerEvents`.
+/// 2. **Reverse position lookup** — `<Subject>Pos(subject_id)` maps an
+///    element back to its slot in the owner's list so removal is constant
+///    time. Example: `TicketOwnerPos`.
+/// 3. **Composite per-entity keys** — `<Subject>(owner_id, child_id)`
+///    (or `<Subject>(event_id, label)` for tier- and policy-scoped data)
+///    stores one entry per (parent, child) pair without a list walk.
+///    Examples: `TierPrice(event_id, tier)`, `AllowlistMember(event_id,
+///    member)`, `Offer(ticket_id, buyer)`.
+///
+/// When adding a new index, pick the shape that matches how it is read —
+/// paged iteration uses (1), O(1) removal from a list uses (2), and
+/// membership or per-child configuration uses (3). Do not rename existing
+/// variants: the XDR encoding of each variant name is part of the storage
+/// ABI. The full storage reference lives in `docs/STORAGE_LAYOUT.md`.
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
@@ -375,15 +400,35 @@ pub enum DataKey {
     /// Presence marks an address allowed to check tickets in for an event on
     /// the organizer's behalf, e.g. a gate device (issue #89).
     CheckInSigner(u64, Address),
-    /// Admin nominated by `propose_admin`, who takes over once they call
-    /// `accept_admin` (issue #100). Absent when no transfer is pending.
-    PendingAdmin,
-    /// Platform fee taken from every resale (issue #103). Absent until the
-    /// admin sets one, which means no fee.
-    PlatformFee,
-    /// Highest `royalty_bps` of any event created so far (issue #103). Bounds
-    /// the platform fee, so the fee plus any event's royalty stays within 100%.
-    MaxRoyaltyBps,
+    /// Contract paused status.
+    Paused,
+    /// Number of tickets purchased by a wallet for an event.
+    WalletPurchaseCount(u64, Address),
+    /// Allowlist member for an event.
+    AllowlistMember(u64, Address),
+    /// Platform fee taken from each primary sale, in basis points (issue #104).
+    /// Absent means no fee.
+    PlatformFeeBps,
+    /// Funds the contract holds for resale bids and offers, across all tickets
+    /// (issues #105, #106). Blocks a payment token change while non-zero.
+    OutstandingResaleFunds,
+    /// Timed auction for a ticket, keyed by ticket id (issue #105).
+    Auction(u64),
+    /// Escrowed offer from one buyer on one ticket (issue #106).
+    Offer(u64, Address),
+    /// Operator approved to move a ticket, keyed by ticket id (issue #107).
+    /// Absent means no operator is approved.
+    TicketApproval(u64),
+    /// Perks attached to one of an event's tiers, e.g. "lounge access", keyed
+    /// by event id and tier name (issue #68). Absent means the tier has no perks.
+    TierPerks(u64, String),
+    /// Bounded custom metadata map for an event (issue #70). Stored apart from
+    /// `Event` so events without metadata pay no extra cost.
+    EventMetadata(u64),
+    /// Optional validity window `(valid_from, valid_until)` for a ticket, in
+    /// ledger seconds (issue #72). Absent means the ticket is valid whenever
+    /// the event allows check-in.
+    TicketValidity(u64),
 }
 
 // Keep the persistent encoding beside the public and stored ticket types.

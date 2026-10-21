@@ -65,6 +65,10 @@ pub fn make_event(env: &Env, client: &TicketingContractClient, organizer: &Addre
             starts_at: 10_000,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 }
@@ -91,6 +95,10 @@ pub fn make_custom_event(
             starts_at,
             transfer_freeze_seconds: 100,
             resale_cutoff_seconds: 200,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
         },
     );
 }
