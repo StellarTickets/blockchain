@@ -37,12 +37,12 @@ Three consequences drive everything below:
 
 ## Configuration
 
-| Setting | Meaning |
-|---|---|
+| Setting                 | Meaning                                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `TICKETING_CONTRACT_ID` | The deployed contract ID (starts with `C`). Set per environment; see the [backend README](https://github.com/StellarTickets/backend#environment) |
-| Network passphrase | Must match the network the contract is deployed on. Testnet and mainnet IDs are not interchangeable |
-| RPC endpoint | Public testnet RPC is fine for development; mainnet needs a provider you pay for |
-| Payment token | Per deployment, set at `initialize`. Read it at runtime with `event_payment_token(event_id)` rather than hardcoding it |
+| Network passphrase      | Must match the network the contract is deployed on. Testnet and mainnet IDs are not interchangeable                                              |
+| RPC endpoint            | Public testnet RPC is fine for development; mainnet needs a provider you pay for                                                                 |
+| Payment token           | Per deployment, set at `initialize`. Read it at runtime with `event_payment_token(event_id)` rather than hardcoding it                           |
 
 Confirm you are pointed at the right network before any write: fetch the
 contract with `get_event` and check the returned `organizer` matches what
@@ -53,13 +53,13 @@ verification, not with a readable error.
 
 32 entry points. Grouped by what the backend has to do with them:
 
-| Group | Entry points |
-|---|---|
-| Reads (no signature) | `get_event`, `get_ticket`, `verify_ticket`, `verify_tickets`, `is_ticket_valid`, `is_valid`, `event_payment_token`, `token_decimals` |
-| Organizer writes | `create_event`, `create_event_with_options`, `allocate_lottery`, `enable_escrow`, `set_event_payment_token`, `issue_ticket`, `set_seat`, `check_in`, `check_in_batch`, `revoke_ticket`, `revoke_with_refund`, `revoke_batch`, `release_escrow` |
-| Owner writes | `transfer_ticket`, `transfer_batch`, `create_gift_claim`, `claim_gift`, `list_for_resale`, `cancel_resale` |
-| Buyer writes | `purchase_primary`, `buy_resale` |
-| Admin writes | `initialize`, `propose_payment_token`, `apply_payment_token`, `set_purchase_throttle` |
+| Group                | Entry points                                                                                                                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reads (no signature) | `get_event`, `get_ticket`, `verify_ticket`, `verify_tickets`, `is_ticket_valid`, `is_valid`, `event_payment_token`, `token_decimals`                                                                                                           |
+| Organizer writes     | `create_event`, `create_event_with_options`, `allocate_lottery`, `enable_escrow`, `set_event_payment_token`, `issue_ticket`, `set_seat`, `check_in`, `check_in_batch`, `revoke_ticket`, `revoke_with_refund`, `revoke_batch`, `release_escrow` |
+| Owner writes         | `transfer_ticket`, `transfer_batch`, `create_gift_claim`, `claim_gift`, `list_for_resale`, `cancel_resale`                                                                                                                                     |
+| Buyer writes         | `purchase_primary`, `buy_resale`                                                                                                                                                                                                               |
+| Admin writes         | `initialize`, `propose_payment_token`, `apply_payment_token`, `set_purchase_throttle`                                                                                                                                                          |
 
 Which address must sign is not a parameter of the function call — it is
 derived from state. `create_event` requires the `organizer` argument to
@@ -70,18 +70,117 @@ error before the function body runs.
 
 ## Id conventions
 
-| Value | On-chain type | Where it comes from |
-|---|---|---|
-| `event_id` | `u64` | **Chosen by the backend**, typically a ULID cast to `u64`. The contract does not allocate it; collisions are your problem (`EventAlreadyExists`) |
-| `ticket_id` | `u64` | Allocated by the contract from a monotonic counter starting at `0`. Returned by `issue_ticket`, `purchase_primary` and `allocate_lottery`. Do not predict it — read it from the return value or from `TicketIssued` |
-| `buyer`, `organizer`, `from`, `to`, `admin` | `Address` | Stellar account (`G…`) or contract (`C…`) addresses |
+| Value                                       | On-chain type | Where it comes from                                                                                                                                                                                                                    |
+| ------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event_id`                                  | `u64`         | **Chosen by the backend**: a random 48-bit value from a CSPRNG (see [Event id strategy](#event-id-strategy)). The contract does not allocate it and does not coordinate it across callers; a collision fails with `EventAlreadyExists` |
+| `ticket_id`                                 | `u64`         | Allocated by the contract from a monotonic counter starting at `0`. Returned by `issue_ticket`, `purchase_primary` and `allocate_lottery`. Do not predict it — read it from the return value or from `TicketIssued`                    |
+| `buyer`, `organizer`, `from`, `to`, `admin` | `Address`     | Stellar account (`G…`) or contract (`C…`) addresses                                                                                                                                                                                    |
 
 Because ticket ids are a single global counter, they are unique across
 all events, not per event. A `(event_id, ticket_id)` composite key is
 unnecessary; `ticket_id` alone is the primary key everywhere.
 
 Ticket ids are also not secret. Anyone can call `verify_ticket` with any
-id. Treat a ticket id as a public handle, not a bearer token.
+id. Treat a ticket id as a public handle, not a bearer token. The same
+is true of event ids: they are public, and knowing one grants nothing.
+
+### Event id strategy
+
+The contract stores events under whatever `u64` the caller supplies and
+rejects a second `create_event` or `create_event_with_options` for the
+same id with `EventAlreadyExists`. Uniqueness is therefore entirely a
+client-side concern, and the backend meets it probabilistically.
+
+**How ids are generated.** Draw 48 random bits from a CSPRNG and store
+them in a `u64` (the top 16 bits are zero). Always carry the value as a
+`bigint` / `u64` end to end; do not round-trip it through a JS `number`
+or a database `double`.
+
+```ts
+import { randomBytes } from "node:crypto";
+
+function newEventId(): bigint {
+  // 6 bytes = 48 bits of entropy, always < 2^48 and so a valid u64.
+  return BigInt("0x" + randomBytes(6).toString("hex"));
+}
+```
+
+Use a CSPRNG, not `Math.random()`. A weak generator makes collisions far
+likelier than the figures below, and predictable ids let another caller
+reserve the ids you are about to use.
+
+**Collision expectations.** The id space is 2^48 ≈ 2.8 × 10^14. With `n`
+events already on the contract, the chance that one new random id is
+already taken is about `n / 2^48`; the chance that _any_ collision has
+occurred among `n` ids is about `n² / 2^49` (the birthday bound).
+
+| Events on the contract (`n`) | Chance a new id collides | Chance of any collision so far |
+| ---------------------------- | ------------------------ | ------------------------------ |
+| 10,000                       | ~3.6 × 10⁻¹¹             | ~1.8 × 10⁻⁷                    |
+| 100,000                      | ~3.6 × 10⁻¹⁰             | ~1.8 × 10⁻⁵                    |
+| 1,000,000                    | ~3.6 × 10⁻⁹              | ~1.8 × 10⁻³                    |
+| 10,000,000                   | ~3.6 × 10⁻⁸              | ~0.18                          |
+
+Read this as: a collision on any single create is vanishingly rare for
+the foreseeable event count, but it is not impossible, and over the
+lifetime of a busy deployment it will eventually happen. The code must
+handle it rather than assume it never will. The ids come from every
+organizer sharing the one contract, so `n` counts all events, not just
+yours. If the deployment is expected to approach tens of millions of
+events, widen the id (up to 64 bits) before it gets there; existing ids
+stay valid.
+
+**What `EventAlreadyExists` means, and what it does not.** The failed
+transaction aborts and writes nothing, so a collision costs a
+simulation or a fee, never a half-created event. But the error alone
+does not say _whose_ event holds that id, and there are two very
+different causes:
+
+1. **A genuine collision.** Another event, created by someone else or
+   earlier, already has this id.
+2. **Your own earlier attempt succeeded.** You submitted `create_event`,
+   the client timed out or the response was lost, and you resubmitted
+   the same id. The first transaction landed, so the second correctly
+   fails.
+
+Treating case 2 as a collision and silently minting a new id leaves an
+orphaned, live event on chain that your database does not know about.
+
+**Retry behavior.**
+
+- **Persist the id before submitting.** Record `event_id` and the
+  organizer in your database (status `pending`) before the transaction
+  is built, so a lost response can always be resolved against a known id.
+- **Simulate first.** `EventAlreadyExists` is visible in the simulation,
+  so a collision against an event that already exists is caught before
+  anyone signs. This is the common path. Generate a new id and
+  re-simulate; no signature has been spent.
+- **Resolve ambiguity with `get_event`.** On `EventAlreadyExists` at
+  submit time, or after any lost or timed-out `create_event`, call
+  `get_event(event_id)`. If the event exists and its `organizer` and
+  creation parameters match the pending row, the creation already
+  succeeded: mark it confirmed and stop. Only if the event exists and
+  does _not_ match is it a real collision.
+- **On a real collision, mint a fresh id and rebuild.** The id is part
+  of the signed transaction, so a new id means a new transaction and a
+  new signature from the organizer. Update the pending row to the new id
+  (or discard it) so the abandoned id is not left attached to the
+  request.
+- **Cap automatic retries.** Allow at most a few (for example 3) fresh
+  ids per request. At the figures above, two collisions in a row is
+  not bad luck; it indicates a broken random source, a truncated or
+  repeated seed, or an id being derived from something non-random. Fail
+  the request and alert rather than looping.
+- **A pre-check narrows the window but does not close it.** Calling
+  `get_event` on the candidate id first and expecting `EventNotFound`
+  avoids an obvious clash, but another create can land between your
+  check and your submit. Always handle `EventAlreadyExists` at
+  submission as well.
+
+`EventAlreadyExists` is a permanent error for that specific id (retrying
+the same id will never succeed), but a retry with a _new_ id is safe and
+is the expected recovery. See [`ERRORS.md`](ERRORS.md) for how it sits
+among the other error classes.
 
 ## Amounts
 
@@ -93,7 +192,7 @@ Never pass a display amount.
 import { nativeToScVal, scValToNative } from "@stellar/stellar-sdk";
 
 const amount = nativeToScVal(15_000_000n, { type: "i128" }); // 1.5 XLM
-const raw = scValToNative(returnValue);                     // bigint
+const raw = scValToNative(returnValue); // bigint
 ```
 
 To render amounts, call `token_decimals()` — it returns the decimals of
@@ -120,27 +219,27 @@ contract-wide token. Prices are per ticket, with no platform fee on top.
 The contract mixes two clocks. Getting this wrong is the most common
 source of "why is my event frozen already" bugs.
 
-| Field | Unit | Source |
-|---|---|---|
-| `starts_at` | Unix timestamp, **seconds** | Compared against `env.ledger().timestamp()`; must be strictly in the future at creation (`InvalidEventTime`) |
-| `transfer_freeze_seconds` | Seconds before `starts_at` | Transfers are rejected once `now >= starts_at - transfer_freeze_seconds` (`TransfersFrozen`) |
-| `resale_cutoff_seconds` | Seconds before `starts_at` | Listings and purchases are rejected once `now >= starts_at - resale_cutoff_seconds` (`ResaleClosed`) |
-| `escrow_release_ledger` | Ledger **sequence number** | `release_escrow` requires `env.ledger().sequence() >= escrow_release_ledger` (`EventNotEnded`) |
-| `min_ledger_spacing` | Ledger sequence delta | Primary-purchase throttle; `0` disables it (`PurchaseTooSoon`) |
-| `apply_after_ledger` | Ledger sequence number | Returned by `PaymentTokenProposed`; the admin waits for this ledger before `apply_payment_token` |
-| `GiftClaim.expires_at` | Unix timestamp, seconds | Compared against the ledger timestamp (`GiftClaimExpired`) |
+| Field                     | Unit                        | Source                                                                                                       |
+| ------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `starts_at`               | Unix timestamp, **seconds** | Compared against `env.ledger().timestamp()`; must be strictly in the future at creation (`InvalidEventTime`) |
+| `transfer_freeze_seconds` | Seconds before `starts_at`  | Transfers are rejected once `now >= starts_at - transfer_freeze_seconds` (`TransfersFrozen`)                 |
+| `resale_cutoff_seconds`   | Seconds before `starts_at`  | Listings and purchases are rejected once `now >= starts_at - resale_cutoff_seconds` (`ResaleClosed`)         |
+| `escrow_release_ledger`   | Ledger **sequence number**  | `release_escrow` requires `env.ledger().sequence() >= escrow_release_ledger` (`EventNotEnded`)               |
+| `min_ledger_spacing`      | Ledger sequence delta       | Primary-purchase throttle; `0` disables it (`PurchaseTooSoon`)                                               |
+| `apply_after_ledger`      | Ledger sequence number      | Returned by `PaymentTokenProposed`; the admin waits for this ledger before `apply_payment_token`             |
+| `GiftClaim.expires_at`    | Unix timestamp, seconds     | Compared against the ledger timestamp (`GiftClaimExpired`)                                                   |
 
 Useful reference points at ~5s per ledger:
 
-| Interval | Ledgers |
-|---|---|
-| `PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS` | 17,280 (~1 day) |
-| Storage TTL per extension | 535,679 (~31 days) — see [`STORAGE_TTL.md`](STORAGE_TTL.md) |
+| Interval                             | Ledgers                                                     |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS` | 17,280 (~1 day)                                             |
+| Storage TTL per extension            | 535,679 (~31 days) — see [`STORAGE_TTL.md`](STORAGE_TTL.md) |
 
 Convert a target date to a ledger sequence for escrow by reading the
 current sequence at submission time and adding the delta, then re-read
 it immediately before submitting — ledger sequences move while you
-prepare. A safer pattern is to release on a *date* basis: read
+prepare. A safer pattern is to release on a _date_ basis: read
 `starts_at` and only submit `release_escrow` once the ledger timestamp
 has passed it.
 
@@ -203,7 +302,7 @@ per id to isolate the offender.
 ## Error handling
 
 Every contract error code is listed in [`ERRORS.md`](ERRORS.md), which
-also covers the failures that are *not* contract codes — missing
+also covers the failures that are _not_ contract codes — missing
 signatures, SEP-41 token failures, and archived storage entries. The
 practical rules for a server:
 
@@ -213,33 +312,36 @@ practical rules for a server:
 - **Decode the code, branch on the class.** The codes split into
   permanent (bad request), time-dependent (wait and retry) and
   operational (deployment or configuration problem). Retrying a
-  permanent error just burns fees.
+  permanent error just burns fees. `EventAlreadyExists` is the one
+  permanent error with a standard recovery: retry with a _new_
+  `event_id`, after confirming the existing event is not your own
+  earlier attempt (see [Event id strategy](#event-id-strategy)).
 - **A missing code is normal.** Auth failures, token contract errors
   and storage archival all surface without an `Error` code. Have a
   fallback branch that reports the raw failure rather than assuming the
   decoder is broken.
 - **Never auto-retry a write that moved money.** Any error aborts the
   transaction, so a failed `buy_resale` moved nothing — but a
-  *successful* one that timed out on the client still settled. Reconcile
+  _successful_ one that timed out on the client still settled. Reconcile
   against the chain before resubmitting.
 
 ## Keeping state in sync
 
 ### What the contract emits
 
-| Event | Emitted by |
-|---|---|
-| `TicketIssued` | `issue_ticket`, `purchase_primary`, `allocate_lottery` |
-| `PrimarySale` | `purchase_primary` |
-| `EventCreated` | `create_event`, `create_event_with_options` |
-| `TicketListed` | `list_for_resale` |
-| `ListingCancelled` | `cancel_resale` |
-| `TicketResold` | `buy_resale` |
-| `TicketCheckedIn` | `check_in`, `check_in_batch` |
-| `ContractInitialized` | `initialize` |
-| `PurchaseThrottleUpdated` | `set_purchase_throttle` |
-| `PaymentTokenProposed` | `propose_payment_token` |
-| `PaymentTokenChanged` | `apply_payment_token` |
+| Event                     | Emitted by                                             |
+| ------------------------- | ------------------------------------------------------ |
+| `TicketIssued`            | `issue_ticket`, `purchase_primary`, `allocate_lottery` |
+| `PrimarySale`             | `purchase_primary`                                     |
+| `EventCreated`            | `create_event`, `create_event_with_options`            |
+| `TicketListed`            | `list_for_resale`                                      |
+| `ListingCancelled`        | `cancel_resale`                                        |
+| `TicketResold`            | `buy_resale`                                           |
+| `TicketCheckedIn`         | `check_in`, `check_in_batch`                           |
+| `ContractInitialized`     | `initialize`                                           |
+| `PurchaseThrottleUpdated` | `set_purchase_throttle`                                |
+| `PaymentTokenProposed`    | `propose_payment_token`                                |
+| `PaymentTokenChanged`     | `apply_payment_token`                                  |
 
 ### What it does not emit
 
@@ -283,11 +385,12 @@ and cadence rationale: [`STORAGE_TTL.md`](STORAGE_TTL.md).
 - [ ] Network passphrase matches the deployment network
 - [ ] Payment token resolved at runtime with `event_payment_token`, not hardcoded
 - [ ] Amounts converted to smallest units (`i128`); `token_decimals()` used for display
-- [ ] `event_id` allocated by the backend and persisted before the first ticket is issued
+- [ ] `event_id` is a CSPRNG-generated 48-bit value, carried as `bigint`/`u64`, and persisted before the first transaction that uses it
+- [ ] `EventAlreadyExists` handled: `get_event` check for your own earlier attempt, then a capped retry with a fresh id
 - [ ] `ticket_id` read from the transaction return value, never predicted
 - [ ] Every write simulated before being handed to a client for signature
 - [ ] Writes confirmed by polling to `SUCCESS`, not by `sendTransaction` returning `PENDING`
-- [ ] Error handling covers contract codes *and* non-code failures
+- [ ] Error handling covers contract codes _and_ non-code failures
 - [ ] Batches chunked at 50
 - [ ] Event subscription paired with a periodic reconciliation pass
 - [ ] TTL keeper scheduled and alerting on storage-layer errors
