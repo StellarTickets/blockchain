@@ -196,4 +196,6 @@ pub enum Error {
     NoPendingAdmin = 97,
     /// The caller is not the nominated pending admin (issue #100).
     NotPendingAdmin = 98,
+    /// Refund is not allowed for tickets not paid on-chain (issue #439).
+    RefundNotAllowed = 99,
 }

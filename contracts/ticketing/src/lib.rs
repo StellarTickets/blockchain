@@ -400,6 +400,7 @@ impl TicketingContract {
                 tier.clone(),
                 String::from_str(&env, "unassigned"),
                 price,
+                false, // allocate_lottery issues off-chain
             );
             ticket_ids.push_back(ticket_id);
         }
@@ -707,8 +708,12 @@ impl TicketingContract {
         organizer.require_auth();
         let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
         Self::require_organizer(&env, ticket.event_id, &organizer)?;
+        // Issue #441: Reject both Revoked and Refunded tickets
         if ticket.status == TicketStatus::Revoked {
             return Err(Error::Revoked);
+        }
+        if ticket.status == TicketStatus::Refunded {
+            return Err(Error::AlreadyRefunded);
         }
         let used = Self::used_count_of(&env, ticket_id);
         if max_uses == 0 || max_uses < used {
@@ -789,7 +794,7 @@ impl TicketingContract {
         Self::ensure_not_cancelled(&event)?;
         Self::ensure_capacity(&event, 1)?;
         Self::reserve_tier_capacity(&env, event_id, &tier, 1)?;
-        let ticket_id = Self::mint(&env, event_id, to, tier, seat, price);
+        let ticket_id = Self::mint(&env, event_id, to, tier, seat, price, false); // issue_ticket is off-chain
         if let Some(uri) = &metadata_uri {
             Self::store_metadata_uri(&env, ticket_id, uri);
         }
@@ -842,6 +847,7 @@ impl TicketingContract {
                 recipient.tier,
                 recipient.seat,
                 recipient.price,
+                false, // issue_tickets is off-chain
             );
             ticket_ids.push_back(ticket_id);
         }
@@ -998,7 +1004,7 @@ impl TicketingContract {
                 token_client.transfer(&buyer, &event.organizer, &proceeds);
             }
         }
-        let ticket_id = Self::mint(&env, event_id, buyer.clone(), tier, seat, price);
+        let ticket_id = Self::mint(&env, event_id, buyer.clone(), tier, seat, price, true); // purchase_primary is on-chain
         Self::increment_tickets_issued(&env, event_id, 1);
         Self::record_purchase(&env, &buyer);
         // The wallet counter is what `enforce_wallet_limit` compares against
@@ -3753,7 +3759,7 @@ impl TicketingContract {
         }
     }
 
-    fn mint(env: &Env, event_id: u64, to: Address, tier: String, seat: String, price: i128) -> u64 {
+    fn mint(env: &Env, event_id: u64, to: Address, tier: String, seat: String, price: i128, paid_on_chain: bool) -> u64 {
         let ticket_id: u64 = env
             .storage()
             .instance()
@@ -3771,6 +3777,14 @@ impl TicketingContract {
             purchased_at: env.ledger().timestamp(),
         };
         Self::save_ticket(env, ticket_id, &ticket);
+        // Track if this ticket was paid on-chain (issue #439)
+        if paid_on_chain {
+            let key = DataKey::PaidOnChain(ticket_id);
+            env.storage().persistent().set(&key, &true);
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        }
         Self::credit_owner_balance(env, &ticket.owner);
         Self::add_to_owner_index(env, &ticket.owner, ticket_id);
         env.storage()
@@ -3831,6 +3845,20 @@ impl TicketingContract {
             return Err(Error::AlreadyRefunded);
         }
         Self::require_not_terminal(&ticket)?;
+        // Issue #440: Reject refunds for tickets with running auctions or offers
+        Self::ensure_no_auction(&env, ticket_id)?;
+        // Issue #438: Only allow refunds if ticket has never been transferred
+        if ticket.transfers > 0 {
+            return Err(Error::NotOwner); // Reuse NotOwner as it conveys the same intent
+        }
+        // Issue #439: Only refund tickets that were paid for on-chain
+        let paid_on_chain = env
+            .storage()
+            .persistent()
+            .has(&DataKey::PaidOnChain(ticket_id));
+        if !paid_on_chain {
+            return Err(Error::RefundNotAllowed);
+        }
         let mut event = Self::get_event_inner(&env, ticket.event_id)?;
         if let Some(refund_window) = event.refund_window_seconds {
             let refund_deadline = ticket.purchased_at.saturating_add(refund_window);

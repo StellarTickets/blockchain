@@ -432,13 +432,16 @@ pub enum DataKey {
     /// Perks attached to one of an event's tiers, e.g. "lounge access", keyed
     /// by event id and tier name (issue #68). Absent means the tier has no perks.
     TierPerks(u64, String),
-    /// Bounded custom metadata map for an event (issue #70). Stored apart from
+    /// Event metadata map for an event (issue #70). Stored apart from
     /// `Event` so events without metadata pay no extra cost.
     EventMetadata(u64),
     /// Optional validity window `(valid_from, valid_until)` for a ticket, in
     /// ledger seconds (issue #72). Absent means the ticket is valid whenever
     /// the event allows check-in.
     TicketValidity(u64),
+    /// Tracks whether a ticket was paid for on-chain via purchase_primary
+    /// (issue #439). Stored separately to avoid migration issues.
+    PaidOnChain(u64),
 }
 
 // Keep the persistent encoding beside the public and stored ticket types.
