@@ -267,3 +267,25 @@ pub struct TicketRefunded {
     pub amount: i128,
     pub source: String,
 }
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when a gift claim is created for a ticket (issue #325).
+/// Emitted by `create_gift_claim` after the claim is saved (issue #325).
+pub struct GiftClaimCreated {
+    #[topic]
+    pub ticket_id: u64,
+    pub from: Address,
+    pub expires_at: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when a gift claim is successfully claimed (issue #325).
+/// Emitted by `claim_gift` after ownership transfers (issue #325).
+pub struct GiftClaimed {
+    #[topic]
+    pub ticket_id: u64,
+    pub from: Address,
+    pub recipient: Address,
+}

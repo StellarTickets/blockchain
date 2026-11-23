@@ -19,11 +19,11 @@ use constants::{LEDGER_BUMP, LEDGER_THRESHOLD};
 pub use error::Error;
 pub use events::{
     AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, ListingCancelled,
-    OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
-    PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
-    TicketResold, TicketTransferred,
+    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, GiftClaimed,
+    GiftClaimCreated, ListingCancelled, OfferAccepted, OfferCancelled, OfferMade,
+    OrganizerApproved, OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed,
+    PlatformFeeUpdated, PrimarySale, PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued,
+    TicketListed, TicketRefunded, TicketResold, TicketTransferred,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -301,6 +301,11 @@ impl TicketingContract {
         let key = DataKey::Event(event_id);
         if env.storage().persistent().has(&key) {
             return Err(Error::EventAlreadyExists);
+        }
+        // Issue #452: reject events where exactly one presale bound is set.
+        // Both bounds must be Some, or both must be None.
+        if params.presale_starts_at.is_some() != params.presale_ends_at.is_some() {
+            return Err(Error::InvalidEventTime);
         }
         if let (Some(presale_starts), Some(presale_ends)) =
             (params.presale_starts_at, params.presale_ends_at)
@@ -1249,6 +1254,12 @@ impl TicketingContract {
             ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
+            TicketTransferred {
+                ticket_id,
+                from: from.clone(),
+                to: to.clone(),
+            }
+            .publish(&env);
         }
         Ok(())
     }
@@ -1289,7 +1300,7 @@ impl TicketingContract {
         }
 
         let claim = GiftClaim {
-            from: owner,
+            from: owner.clone(),
             secret_hash,
             expires_at,
         };
@@ -1297,6 +1308,12 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        GiftClaimCreated {
+            ticket_id,
+            from: owner,
+            expires_at,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -1338,12 +1355,18 @@ impl TicketingContract {
         Self::ensure_transfer_allowed(&env, &ticket, &event)?;
 
         Self::move_owner_balance(&env, ticket_id, &ticket.owner, &recipient);
-        ticket.owner = recipient;
+        ticket.owner = recipient.clone();
         ticket.transfers += 1;
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         env.storage().persistent().remove(&key);
         Self::save_ticket(&env, ticket_id, &ticket);
+        GiftClaimed {
+            ticket_id,
+            from: claim.from,
+            recipient,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -4143,17 +4166,21 @@ impl TicketingContract {
         buyer: &Address,
         event: &Event,
     ) -> Result<(), Error> {
-        if let (Some(presale_starts), Some(presale_ends)) =
+        if let (Some(_presale_starts), Some(presale_ends)) =
             (event.presale_starts_at, event.presale_ends_at)
         {
             let now = env.ledger().timestamp();
-            let in_presale = now >= presale_starts && now < presale_ends;
-            let on_allowlist = env
-                .storage()
-                .persistent()
-                .has(&DataKey::AllowlistMember(event_id, buyer.clone()));
-            if in_presale && !on_allowlist {
-                return Err(Error::NotOnAllowlist);
+            // Issue #451: enforce the allowlist whenever now < presale_ends,
+            // not just during the presale window. This ensures non-allowlisted
+            // buyers cannot purchase before the presale opens.
+            if now < presale_ends {
+                let on_allowlist = env
+                    .storage()
+                    .persistent()
+                    .has(&DataKey::AllowlistMember(event_id, buyer.clone()));
+                if !on_allowlist {
+                    return Err(Error::NotOnAllowlist);
+                }
             }
         }
         Ok(())
