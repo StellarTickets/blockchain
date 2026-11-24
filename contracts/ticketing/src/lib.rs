@@ -26,6 +26,8 @@ pub use events::{
     PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
     TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
     EventConfigChanged, ListingDelisted, GiftClaimed, GiftClaimCreated,
+    AllowlistMembersAdded, AllowlistMembersRemoved, TicketUsesChanged, TicketValidityChanged,
+    TicketPassedOut,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -705,6 +707,12 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        TicketPassedOut {
+            ticket_id,
+            organizer,
+            reentry_count: count,
+        }
+        .publish(&env);
         Ok(count)
     }
 
@@ -748,6 +756,8 @@ impl TicketingContract {
         if max_uses == 0 || max_uses < used {
             return Err(Error::InvalidMaxUses);
         }
+        // Capture old value before updating
+        let old_max_uses = Self::max_uses_of(&env, ticket_id);
         let key = DataKey::MaxUses(ticket_id);
         env.storage().persistent().set(&key, &max_uses);
         env.storage()
@@ -761,6 +771,13 @@ impl TicketingContract {
             };
             Self::save_ticket(&env, ticket_id, &ticket);
         }
+        TicketUsesChanged {
+            ticket_id,
+            organizer,
+            old_max_uses,
+            new_max_uses: max_uses,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -1849,10 +1866,20 @@ impl TicketingContract {
     ) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
-        Self::require_organizer(&env, event_id, &organizer)?;
+        let event = Self::require_organizer(&env, event_id, &organizer)?;
         if let (Some(start), Some(end)) = (sale_start, sale_end) {
             if end <= start {
                 return Err(Error::InvalidSaleWindow);
+            }
+        }
+        // Issue #489: Validate that sale_end doesn't exceed ticket_expires_at.
+        // If tickets expire before the sale ends, those final sales would issue
+        // already-expired tickets.
+        if let Some(sale_end_ts) = sale_end {
+            if let Some(expires_at) = event.ticket_expires_at {
+                if sale_end_ts > expires_at {
+                    return Err(Error::InvalidSaleWindow);
+                }
             }
         }
         let key = DataKey::SaleWindow(event_id);
@@ -1912,6 +1939,13 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        TicketValidityChanged {
+            ticket_id,
+            organizer,
+            valid_from,
+            valid_until,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -4588,6 +4622,7 @@ impl TicketingContract {
         organizer.require_auth();
         Self::require_not_paused(&env)?;
         Self::require_organizer(&env, event_id, &organizer)?;
+        let count = members.len();
         for member in members.iter() {
             let key = DataKey::AllowlistMember(event_id, member);
             env.storage().persistent().set(&key, &true);
@@ -4595,6 +4630,12 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        AllowlistMembersAdded {
+            event_id,
+            organizer,
+            count,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -4608,11 +4649,18 @@ impl TicketingContract {
         organizer.require_auth();
         Self::require_not_paused(&env)?;
         Self::require_organizer(&env, event_id, &organizer)?;
+        let count = members.len();
         for member in members.iter() {
             env.storage()
                 .persistent()
                 .remove(&DataKey::AllowlistMember(event_id, member));
         }
+        AllowlistMembersRemoved {
+            event_id,
+            organizer,
+            count,
+        }
+        .publish(&env);
         Ok(())
     }
 

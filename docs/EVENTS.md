@@ -226,3 +226,78 @@ tier configuration from these events without polling the getters.
 | `AdminProposed`           | `propose_admin`                            | `admin` (topic), `new_admin`                                      |
 | `AdminTransferred`        | `accept_admin`                             | `old_admin` (topic), `new_admin`                                  |
 | `PlatformFeeUpdated`      | `set_platform_fee_bps`, `set_platform_fee` | `admin` (topic), `fee_bps`, `recipient`                           |
+
+
+## `AllowlistMembersAdded`
+
+Emitted by `add_to_allowlist` after all members are successfully added to the
+presale allowlist (issue #495).
+
+| Field       | Type      | Notes                                 |
+| ----------- | --------- | ------------------------------------- |
+| `event_id`  | `u64`     | topic. Event whose allowlist changed  |
+| `organizer` | `Address` | Organizer who added the members       |
+| `count`     | `u32`     | Number of members added in this call  |
+
+Indexers can subscribe to this event to mirror the presale allowlist off-chain
+without polling individual member states. The event reports the total count of
+members added, not individual addresses, to keep event size bounded.
+
+## `AllowlistMembersRemoved`
+
+Emitted by `remove_from_allowlist` after all members are successfully removed
+from the presale allowlist (issue #495).
+
+| Field       | Type      | Notes                                   |
+| ----------- | --------- | --------------------------------------- |
+| `event_id`  | `u64`     | topic. Event whose allowlist changed    |
+| `organizer` | `Address` | Organizer who removed the members       |
+| `count`     | `u32`     | Number of members removed in this call  |
+
+## `TicketUsesChanged`
+
+Emitted by `set_ticket_max_uses` after the max uses value is successfully
+updated (issue #494).
+
+| Field           | Type      | Notes                              |
+| --------------- | --------- | ---------------------------------- |
+| `ticket_id`     | `u64`     | topic. Ticket whose uses changed   |
+| `organizer`     | `Address` | Organizer who updated the value    |
+| `old_max_uses`  | `u32`     | Previous max uses value            |
+| `new_max_uses`  | `u32`     | New max uses value                 |
+
+This event makes changes to ticket usability visible to indexers and the backend.
+Off-chain systems can subscribe to this event to update their ticket state
+mirrors without re-reading every ticket on every block.
+
+## `TicketValidityChanged`
+
+Emitted by `set_ticket_validity` after the validity window is successfully set
+or removed (issue #494).
+
+| Field          | Type           | Notes                                                 |
+| -------------- | -------------- | ----------------------------------------------------- |
+| `ticket_id`    | `u64`          | topic. Ticket whose validity changed                  |
+| `organizer`    | `Address`      | Organizer who updated the validity                    |
+| `valid_from`   | `Option<u64>`  | New valid_from timestamp (None if open-ended/removed) |
+| `valid_until`  | `Option<u64>`  | New valid_until timestamp (None if open-ended/removed)|
+
+Both `valid_from` and `valid_until` being `None` indicates the validity window
+was removed entirely. The event is published even when removing the window so
+indexers can track that the ticket is now valid at any time within the event's
+own check-in window.
+
+## `TicketPassedOut`
+
+Emitted by `pass_out` after a ticket is passed back out for re-entry (issue #491).
+
+| Field           | Type      | Notes                                        |
+| --------------- | --------- | -------------------------------------------- |
+| `ticket_id`     | `u64`     | topic. Ticket that was passed out            |
+| `organizer`     | `Address` | Organizer or signer who passed out the ticket|
+| `reentry_count` | `u32`     | Current re-entry count after this pass-out   |
+
+This event makes re-entry visible to indexers, so attendance dashboards do not
+over-count entries. Without this event, indexers would see only the check-in
+events and incorrectly treat each re-entry as a new unique attendee. Subscribe
+to this event to decrement the active attendance count when a ticket passes out.
