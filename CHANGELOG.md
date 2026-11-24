@@ -13,6 +13,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   update a stale event-creation test so the contract builds again.
 
 ### Changed
+- `TicketRecipient` gains a `metadata_uri` field (#508). Clients that build
+  batch recipients must set it, using `None` for the previous behaviour.
 - Rename `get_organizer_events` to `organizer_event_count` (#504). The old
   name stays as a deprecated alias.
 - Centralize organizer authorization and terminal ticket status checks without
@@ -23,6 +25,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   for the dependency versioning policy and upgrade procedure.
 
 ### Added
+- `set_tier_metadata_uri` and `tier_metadata_uri` set a default metadata URI
+  per event tier. `purchase_primary` gives each primary-sale ticket its tier's
+  URI, so those tickets resolve through `token_uri` (#507).
+- `TicketRecipient` has an optional `metadata_uri`, so `issue_tickets` batches
+  can set a URI per ticket. The URI is bounded by `MAX_METADATA_URI_LEN` (#508).
+- `verify_tickets_partial` returns `None` for unknown ticket ids instead of
+  failing the batch. `verify_tickets` is unchanged (#509).
+- `CheckInSignerAdded` and `CheckInSignerRemoved` events, published when the
+  check-in signer list changes (#517).
 - `TierPriceSet`, `TierCapacitySet`, `TierZonesSet` and `TierPerksSet` events
   emitted by the tier price, capacity, zone and perk setters (#514, #515).
 - `TicketTransferred` is now published for every owner change, including

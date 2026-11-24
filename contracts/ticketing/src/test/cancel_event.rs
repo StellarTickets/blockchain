@@ -99,6 +99,7 @@ fn cancelled_event_blocks_batch_and_lottery_minting() {
         tier: ga(&env),
         seat: String::from_str(&env, "unassigned"),
         price: 1_000,
+        metadata_uri: None,
     });
     assert_eq!(
         client.try_issue_tickets(&organizer, &1, &recipients),

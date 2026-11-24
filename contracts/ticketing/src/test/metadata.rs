@@ -214,3 +214,180 @@ fn extend_ticket_ttl_keeps_the_uri_readable() {
         String::from_str(&env, TICKET_URI)
     );
 }
+
+// Issue #507: primary-sale tickets take their tier's default metadata URI.
+
+const TIER_URI: &str = "ipfs://bafybeitier/ga.json";
+
+fn tier(env: &Env, name: &str) -> String {
+    String::from_str(env, name)
+}
+
+fn buy(
+    env: &Env,
+    client: &TicketingContractClient,
+    token_asset: &StellarAssetClient,
+    buyer: &Address,
+    tier_name: &str,
+) -> u64 {
+    token_asset.mint(buyer, &10_000i128);
+    client.purchase_primary(buyer, &1, &tier(env, tier_name), &tier(env, "1"))
+}
+
+#[test]
+fn primary_sale_takes_the_tier_metadata_uri() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    client.set_tier_price(&organizer, &1, &tier(&env, "GA"), &2_000i128);
+    client.set_tier_metadata_uri(
+        &organizer,
+        &1,
+        &tier(&env, "GA"),
+        &Some(tier(&env, TIER_URI)),
+    );
+    let buyer = Address::generate(&env);
+
+    let ticket_id = buy(&env, &client, &token_asset, &buyer, "GA");
+
+    assert_eq!(client.token_uri(&ticket_id), tier(&env, TIER_URI));
+}
+
+#[test]
+fn primary_sale_without_a_tier_uri_has_no_metadata() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    client.set_tier_price(&organizer, &1, &tier(&env, "GA"), &2_000i128);
+    let buyer = Address::generate(&env);
+
+    let ticket_id = buy(&env, &client, &token_asset, &buyer, "GA");
+
+    assert_eq!(
+        client.try_token_uri(&ticket_id),
+        Err(Ok(Error::MetadataUriNotSet))
+    );
+}
+
+#[test]
+fn tier_uri_applies_only_to_its_own_tier() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    client.set_tier_price(&organizer, &1, &tier(&env, "GA"), &2_000i128);
+    client.set_tier_price(&organizer, &1, &tier(&env, "VIP"), &5_000i128);
+    client.set_tier_metadata_uri(
+        &organizer,
+        &1,
+        &tier(&env, "VIP"),
+        &Some(tier(&env, TIER_URI)),
+    );
+    let buyer = Address::generate(&env);
+
+    let ga_ticket = buy(&env, &client, &token_asset, &buyer, "GA");
+    let vip_ticket = buy(&env, &client, &token_asset, &buyer, "VIP");
+
+    assert_eq!(
+        client.try_token_uri(&ga_ticket),
+        Err(Ok(Error::MetadataUriNotSet))
+    );
+    assert_eq!(client.token_uri(&vip_ticket), tier(&env, TIER_URI));
+}
+
+#[test]
+fn clearing_the_tier_uri_keeps_earlier_tickets_unchanged() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    client.set_tier_price(&organizer, &1, &tier(&env, "GA"), &2_000i128);
+    client.set_tier_metadata_uri(
+        &organizer,
+        &1,
+        &tier(&env, "GA"),
+        &Some(tier(&env, TIER_URI)),
+    );
+    let buyer = Address::generate(&env);
+    let before_clear = buy(&env, &client, &token_asset, &buyer, "GA");
+
+    client.set_tier_metadata_uri(&organizer, &1, &tier(&env, "GA"), &None);
+    assert_eq!(client.tier_metadata_uri(&1, &tier(&env, "GA")), None);
+    let after_clear = buy(&env, &client, &token_asset, &buyer, "GA");
+
+    assert_eq!(client.token_uri(&before_clear), tier(&env, TIER_URI));
+    assert_eq!(
+        client.try_token_uri(&after_clear),
+        Err(Ok(Error::MetadataUriNotSet))
+    );
+}
+
+#[test]
+fn tier_uri_getter_reflects_the_stored_value() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    assert_eq!(client.tier_metadata_uri(&1, &tier(&env, "GA")), None);
+
+    client.set_tier_metadata_uri(
+        &organizer,
+        &1,
+        &tier(&env, "GA"),
+        &Some(tier(&env, TIER_URI)),
+    );
+
+    assert_eq!(
+        client.tier_metadata_uri(&1, &tier(&env, "GA")),
+        Some(tier(&env, TIER_URI))
+    );
+}
+
+#[test]
+fn non_organizer_cannot_set_a_tier_uri() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let stranger = Address::generate(&env);
+
+    assert_eq!(
+        client.try_set_tier_metadata_uri(
+            &stranger,
+            &1,
+            &tier(&env, "GA"),
+            &Some(tier(&env, TIER_URI)),
+        ),
+        Err(Ok(Error::NotOrganizer))
+    );
+    assert_eq!(client.tier_metadata_uri(&1, &tier(&env, "GA")), None);
+}
+
+#[test]
+fn tier_uri_length_is_bounded() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let too_long = "u".repeat(MAX_METADATA_URI_LEN as usize + 1);
+    let at_limit = "u".repeat(MAX_METADATA_URI_LEN as usize);
+
+    assert_eq!(
+        client.try_set_tier_metadata_uri(
+            &organizer,
+            &1,
+            &tier(&env, "GA"),
+            &Some(tier(&env, &too_long)),
+        ),
+        Err(Ok(Error::StringTooLong))
+    );
+    client.set_tier_metadata_uri(
+        &organizer,
+        &1,
+        &tier(&env, "GA"),
+        &Some(tier(&env, &at_limit)),
+    );
+    assert_eq!(
+        client.tier_metadata_uri(&1, &tier(&env, "GA")),
+        Some(tier(&env, &at_limit))
+    );
+}
+
+#[test]
+fn empty_tier_uri_is_rejected() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    assert_eq!(
+        client.try_set_tier_metadata_uri(&organizer, &1, &tier(&env, "GA"), &Some(tier(&env, "")),),
+        Err(Ok(Error::EmptyNameOrCategory))
+    );
+}

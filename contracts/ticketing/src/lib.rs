@@ -18,22 +18,13 @@ pub use constants::{
 use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
 pub use events::{
-    AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, ListingCancelled,
-    OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
+    AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced, CheckInSignerAdded,
+    CheckInSignerRemoved, ContractInitialized, ContractUpgraded, EventCancelled,
+    EventConfigChanged, EventCreated, GiftClaimCreated, GiftClaimed, ListingCancelled,
+    ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
     PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
     TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventConfigChanged, EventCreated,
-    ListingCancelled, ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved,
-    OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
-    TicketResold, TicketTransferred,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, GiftClaimed,
-    GiftClaimCreated, ListingCancelled, OfferAccepted, OfferCancelled, OfferMade,
-    OrganizerApproved, OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed,
-    PlatformFeeUpdated, PrimarySale, PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued,
-    TicketListed, TicketRefunded, TicketResold, TicketTransferred,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -831,7 +822,8 @@ impl TicketingContract {
     /// the same order as `recipients`.
     ///
     /// Bounded by `MAX_BATCH_SIZE` and atomic: if any recipient fails
-    /// validation, no ticket from this call is minted.
+    /// validation, no ticket from this call is minted. Each recipient may set
+    /// its own `metadata_uri` (issue #508), read back through `token_uri`.
     ///
     /// # Errors
     ///
@@ -858,19 +850,28 @@ impl TicketingContract {
         Self::ensure_capacity(&event, recipients.len() as u64)?;
         let mut ticket_ids = Vec::new(&env);
         for recipient in recipients.iter() {
-            if recipient.price < 0 {
+            let TicketRecipient {
+                to,
+                tier,
+                seat,
+                price,
+                metadata_uri,
+            } = recipient;
+            if price < 0 {
                 return Err(Error::InvalidPrice);
             }
-            Self::validate_ticket_labels(&recipient.tier, &recipient.seat)?;
-            Self::reserve_tier_capacity(&env, event_id, &recipient.tier, 1)?;
-            let ticket_id = Self::mint(
-                &env,
-                event_id,
-                recipient.to,
-                recipient.tier,
-                recipient.seat,
-                recipient.price,
-            );
+            Self::validate_ticket_labels(&tier, &seat)?;
+            // Issue #508: a batch entry carries the same bounded URI that
+            // `issue_ticket_with_metadata` accepts, and is validated before any
+            // mint so a bad URI rejects the whole batch.
+            if let Some(uri) = &metadata_uri {
+                Self::validate_label(uri, MAX_METADATA_URI_LEN)?;
+            }
+            Self::reserve_tier_capacity(&env, event_id, &tier, 1)?;
+            let ticket_id = Self::mint(&env, event_id, to, tier, seat, price);
+            if let Some(uri) = &metadata_uri {
+                Self::store_metadata_uri(&env, ticket_id, uri);
+            }
             ticket_ids.push_back(ticket_id);
         }
         Self::increment_tickets_issued(&env, event_id, recipients.len() as u64);
@@ -1042,7 +1043,13 @@ impl TicketingContract {
                 token_client.transfer(&buyer, &event.organizer, &proceeds);
             }
         }
+        // Issue #507: a primary-sale ticket takes its tier's default metadata
+        // URI, so it resolves through `token_uri` like an issued ticket does.
+        let tier_uri = Self::tier_metadata_uri_inner(&env, event_id, &tier);
         let ticket_id = Self::mint(&env, event_id, buyer.clone(), tier, seat, price);
+        if let Some(uri) = &tier_uri {
+            Self::store_metadata_uri(&env, ticket_id, uri);
+        }
         // Mark this ticket as acquired through on-chain primary sale (issue #439).
         // Only tickets with this marker can be refunded on-chain.
         let key = DataKey::PrimarySaleTicket(ticket_id);
@@ -1399,8 +1406,10 @@ impl TicketingContract {
         // Issue #513: gift claims change ownership, so they publish TicketTransferred.
         TicketTransferred {
             ticket_id,
-            from: claim.from,
+            from: claim.from.clone(),
             to: ticket.owner.clone(),
+        }
+        .publish(&env);
         GiftClaimed {
             ticket_id,
             from: claim.from,
@@ -1456,6 +1465,43 @@ impl TicketingContract {
         let mut tickets = Vec::new(&env);
         for ticket_id in ticket_ids.iter() {
             tickets.push_back(Self::get_ticket_inner(&env, ticket_id)?);
+        }
+        Ok(tickets)
+    }
+
+    /// Batch verification that tolerates unknown ids (issue #509). Behaves
+    /// like `verify_tickets`, but an id with no ticket yields `None` in its
+    /// slot instead of failing the whole call, so a scan of 35 tickets with
+    /// one bad id still returns the other 34. Results keep the order of
+    /// `ticket_ids`.
+    ///
+    /// Empty and oversized batches are rejected exactly as in `verify_tickets`.
+    /// `verify_tickets` keeps its strict behaviour and return type for existing
+    /// integrations. This is a separate entry point rather than a `try_`-prefixed
+    /// name, because the SDK already generates `try_<name>` client methods.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::EmptyBatch` for an empty list and `Error::BatchTooLarge`
+    /// above `MAX_BATCH_SIZE`.
+    pub fn verify_tickets_partial(
+        env: Env,
+        ticket_ids: Vec<u64>,
+    ) -> Result<Vec<Option<Ticket>>, Error> {
+        Self::require_initialized(&env)?;
+        if ticket_ids.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if ticket_ids.len() > MAX_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
+        let mut tickets = Vec::new(&env);
+        for ticket_id in ticket_ids.iter() {
+            match Self::get_ticket_inner(&env, ticket_id) {
+                Ok(ticket) => tickets.push_back(Some(ticket)),
+                Err(Error::TicketNotFound) => tickets.push_back(None),
+                Err(err) => return Err(err),
+            }
         }
         Ok(tickets)
     }
@@ -1596,6 +1642,50 @@ impl TicketingContract {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
+    /// Sets or clears the default metadata URI for one of an event's tiers
+    /// (issue #507). `purchase_primary` gives every ticket it sells in the tier
+    /// this URI, so primary-sale tickets resolve through `token_uri`. Passing
+    /// `None` clears it. Tickets already sold keep the URI they were minted
+    /// with.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::EmptyNameOrCategory` for an empty URI, `Error::StringTooLong`
+    /// for a URI above `MAX_METADATA_URI_LEN`, and `Error::NotOrganizer` for a
+    /// caller who does not run the event.
+    pub fn set_tier_metadata_uri(
+        env: Env,
+        organizer: Address,
+        event_id: u64,
+        tier: String,
+        uri: Option<String>,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        organizer.require_auth();
+        Self::require_organizer(&env, event_id, &organizer)?;
+        Self::validate_label(&tier, MAX_TICKET_LABEL_LEN)?;
+        let key = DataKey::TierMetadataUri(event_id, tier);
+        match uri {
+            Some(uri) => {
+                Self::validate_label(&uri, MAX_METADATA_URI_LEN)?;
+                env.storage().persistent().set(&key, &uri);
+                env.storage()
+                    .persistent()
+                    .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+            }
+            None => env.storage().persistent().remove(&key),
+        }
+        Ok(())
+    }
+
+    /// The default metadata URI for one of an event's tiers, or `None` when
+    /// the tier has none (issue #507).
+    pub fn tier_metadata_uri(env: Env, event_id: u64, tier: String) -> Option<String> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TierMetadataUri(event_id, tier))
+    }
+
     /// Sets one custom metadata entry on an event, e.g. `("venue", "O2
     /// Arena")` (issue #70). Overwrites an existing key. The map is bounded:
     /// adding a new key fails with `Error::EventMetadataFull` once the event
@@ -1689,15 +1779,22 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_organizer(&env, event_id, &organizer)?;
-        let key = DataKey::CheckInSigner(event_id, signer);
+        let key = DataKey::CheckInSigner(event_id, signer.clone());
+        let already_listed = env.storage().persistent().has(&key);
         env.storage().persistent().set(&key, &true);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        // Issue #517: device key management must be auditable. Re-adding a
+        // signer that is already listed changes nothing, so it emits nothing.
+        if !already_listed {
+            CheckInSignerAdded { event_id, signer }.publish(&env);
+        }
         Ok(())
     }
 
-    /// Revokes a delegated check-in signer (issue #89).
+    /// Revokes a delegated check-in signer (issue #89). Removing a signer that
+    /// is not on the list succeeds and emits nothing (issue #517).
     pub fn remove_checkin_signer(
         env: Env,
         organizer: Address,
@@ -1707,9 +1804,12 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_organizer(&env, event_id, &organizer)?;
-        env.storage()
-            .persistent()
-            .remove(&DataKey::CheckInSigner(event_id, signer));
+        let key = DataKey::CheckInSigner(event_id, signer.clone());
+        if env.storage().persistent().has(&key) {
+            env.storage().persistent().remove(&key);
+            // Issue #517: publish the revocation so indexers can mirror it.
+            CheckInSignerRemoved { event_id, signer }.publish(&env);
+        }
         Ok(())
     }
 
@@ -3496,6 +3596,20 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Reads a tier's default metadata URI for a primary sale (issue #507).
+    /// Refreshes the entry's TTL when it is set, so a tier that keeps selling
+    /// does not lose its URI to archival.
+    fn tier_metadata_uri_inner(env: &Env, event_id: u64, tier: &String) -> Option<String> {
+        let key = DataKey::TierMetadataUri(event_id, tier.clone());
+        let uri: Option<String> = env.storage().persistent().get(&key);
+        if uri.is_some() {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        }
+        uri
     }
 
     /// Stores a ticket's metadata URI under its own key (issue #109).
