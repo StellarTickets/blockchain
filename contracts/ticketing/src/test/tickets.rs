@@ -1646,3 +1646,74 @@ fn revoke_does_not_decrement_tickets_issued() {
     client.revoke_batch(&organizer, &batch);
     assert_eq!(client.get_event(&1).tickets_issued, 3);
 }
+
+// Issue #509: `verify_tickets_partial` reports unknown ids as `None`.
+
+#[test]
+fn verify_tickets_partial_marks_missing_ids_as_none() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let first = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    let second = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    let mut ids = Vec::new(&env);
+    ids.push_back(first);
+    ids.push_back(999);
+    ids.push_back(second);
+
+    let results = client.verify_tickets_partial(&ids);
+
+    assert_eq!(results.len(), 3);
+    assert_eq!(results.get(0), Some(Some(client.get_ticket(&first))));
+    assert_eq!(results.get(1), Some(None));
+    assert_eq!(results.get(2), Some(Some(client.get_ticket(&second))));
+}
+
+#[test]
+fn verify_tickets_partial_returns_none_for_an_all_missing_batch() {
+    let (env, client, _token, _token_asset, _admin, _organizer) = setup();
+    let mut ids = Vec::new(&env);
+    ids.push_back(1);
+    ids.push_back(2);
+
+    let results = client.verify_tickets_partial(&ids);
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results.get(0), Some(None));
+    assert_eq!(results.get(1), Some(None));
+}
+
+#[test]
+fn verify_tickets_partial_rejects_empty_and_oversized_batches() {
+    let (env, client, _token, _token_asset, _admin, _organizer) = setup();
+    let empty: Vec<u64> = Vec::new(&env);
+    assert_eq!(
+        client.try_verify_tickets_partial(&empty),
+        Err(Ok(Error::EmptyBatch))
+    );
+
+    let mut oversized = Vec::new(&env);
+    for id in 1..=(MAX_BATCH_SIZE as u64 + 1) {
+        oversized.push_back(id);
+    }
+    assert_eq!(
+        client.try_verify_tickets_partial(&oversized),
+        Err(Ok(Error::BatchTooLarge))
+    );
+}
+
+#[test]
+fn strict_verify_tickets_still_fails_on_a_missing_id() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let real = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    let mut ids = Vec::new(&env);
+    ids.push_back(real);
+    ids.push_back(999);
+
+    assert_eq!(
+        client.try_verify_tickets(&ids),
+        Err(Ok(Error::TicketNotFound))
+    );
+}

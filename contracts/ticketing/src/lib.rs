@@ -1469,6 +1469,43 @@ impl TicketingContract {
         Ok(tickets)
     }
 
+    /// Batch verification that tolerates unknown ids (issue #509). Behaves
+    /// like `verify_tickets`, but an id with no ticket yields `None` in its
+    /// slot instead of failing the whole call, so a scan of 35 tickets with
+    /// one bad id still returns the other 34. Results keep the order of
+    /// `ticket_ids`.
+    ///
+    /// Empty and oversized batches are rejected exactly as in `verify_tickets`.
+    /// `verify_tickets` keeps its strict behaviour and return type for existing
+    /// integrations. This is a separate entry point rather than a `try_`-prefixed
+    /// name, because the SDK already generates `try_<name>` client methods.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::EmptyBatch` for an empty list and `Error::BatchTooLarge`
+    /// above `MAX_BATCH_SIZE`.
+    pub fn verify_tickets_partial(
+        env: Env,
+        ticket_ids: Vec<u64>,
+    ) -> Result<Vec<Option<Ticket>>, Error> {
+        Self::require_initialized(&env)?;
+        if ticket_ids.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if ticket_ids.len() > MAX_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
+        let mut tickets = Vec::new(&env);
+        for ticket_id in ticket_ids.iter() {
+            match Self::get_ticket_inner(&env, ticket_id) {
+                Ok(ticket) => tickets.push_back(Some(ticket)),
+                Err(Error::TicketNotFound) => tickets.push_back(None),
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(tickets)
+    }
+
     /// Marks a ticket as used at the point of entry. Only the event's
     /// organizer (or their delegated gate device, via a shared Soroban
     /// signer) may check a ticket in, and only once.
