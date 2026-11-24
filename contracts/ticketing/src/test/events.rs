@@ -32,14 +32,27 @@ fn create_event_rejects_a_duplicate_event_id() {
 }
 
 #[test]
-fn get_organizer_events_returns_the_registered_event_count() {
+fn organizer_event_count_returns_the_registered_event_count() {
     let (env, client, _token, _token_asset, _admin, organizer) = setup();
-    assert_eq!(client.get_organizer_events(&organizer), 0);
+    assert_eq!(client.organizer_event_count(&organizer), 0);
     make_event(&env, &client, &organizer, 1);
     make_event(&env, &client, &organizer, 2);
-    assert_eq!(client.get_organizer_events(&organizer), 2);
+    assert_eq!(client.organizer_event_count(&organizer), 2);
     let other = Address::generate(&env);
-    assert_eq!(client.get_organizer_events(&other), 0);
+    assert_eq!(client.organizer_event_count(&other), 0);
+}
+
+#[test]
+fn deprecated_get_organizer_events_matches_the_new_name() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    make_event(&env, &client, &organizer, 2);
+    assert_eq!(
+        client.get_organizer_events(&organizer),
+        client.organizer_event_count(&organizer)
+    );
+    let stranger = Address::generate(&env);
+    assert_eq!(client.get_organizer_events(&stranger), 0);
 }
 
 #[test]
