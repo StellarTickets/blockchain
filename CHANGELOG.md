@@ -13,6 +13,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   update a stale event-creation test so the contract builds again.
 
 ### Changed
+- Rename `get_organizer_events` to `organizer_event_count` (#504). The old
+  name stays as a deprecated alias.
 - Centralize organizer authorization and terminal ticket status checks without
   changing operation-specific revocation rules (#348, #349).
 - Keep ticket lifecycle encoding with the types in `types.rs`, preserving
@@ -21,6 +23,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   for the dependency versioning policy and upgrade procedure.
 
 ### Added
+- SEP-50 `name()` and `symbol()`, set by the admin with
+  `set_collection_metadata` (#505).
+- `EventConfigChanged` event from each event-level setter, with the setting
+  name in `field` (#516).
+- `organizer_delist`, which returns a listed ticket to `Valid` without
+  revoking it, and a `ListingDelisted` event (#518).
 - Releases attach the contract spec as `stellar_tickets_ticketing.spec.json`
   and `.spec.xdr`, exported by `scripts/export-spec.sh` (`make spec`) (#60).
 - Sample event indexer in `examples/indexer` that decodes events from the
