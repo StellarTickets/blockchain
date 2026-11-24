@@ -1,6 +1,8 @@
 //! VIP/perks metadata per tier (issue #68).
 
 use super::*;
+use soroban_sdk::testutils::Events as _;
+use soroban_sdk::Event as _;
 
 fn s(env: &Env, v: &str) -> String {
     String::from_str(env, v)
@@ -98,4 +100,56 @@ fn only_the_organizer_can_set_perks() {
         client.try_set_tier_perks(&stranger, &1, &s(&env, "VIP"), &perks(&env, &["lounge"])),
         Err(Ok(Error::NotOrganizer))
     );
+}
+
+/// Counts `TierPerksSet` events matching one exact perk change (issue #515).
+fn count_tier_perks_set(
+    env: &Env,
+    client: &TicketingContractClient,
+    perk_list: Vec<String>,
+) -> usize {
+    let expected = TierPerksSet {
+        event_id: 1,
+        tier: s(env, "VIP"),
+        perks: perk_list,
+    }
+    .to_xdr(env, &client.address);
+    env.events()
+        .all()
+        .events()
+        .iter()
+        .filter(|event| **event == expected)
+        .count()
+}
+
+#[test]
+fn set_tier_perks_publishes_the_perk_list_and_its_removal() {
+    let (env, client, _token, _asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    client.set_tier_perks(
+        &organizer,
+        &1,
+        &s(&env, "VIP"),
+        &perks(&env, &["lounge access", "free drink"]),
+    );
+    assert_eq!(
+        count_tier_perks_set(&env, &client, perks(&env, &["lounge access", "free drink"])),
+        1
+    );
+
+    client.set_tier_perks(&organizer, &1, &s(&env, "VIP"), &Vec::new(&env));
+    assert_eq!(count_tier_perks_set(&env, &client, Vec::new(&env)), 1);
+}
+
+#[test]
+fn rejected_tier_perks_publish_nothing() {
+    let (env, client, _token, _asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    assert_eq!(
+        client.try_set_tier_perks(&organizer, &1, &s(&env, "VIP"), &perks(&env, &[""])),
+        Err(Ok(Error::InvalidPerks))
+    );
+    assert_eq!(count_tier_perks_set(&env, &client, perks(&env, &[""])), 0);
 }

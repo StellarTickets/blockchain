@@ -5,6 +5,8 @@
 //! would take the tier past its cap with `TierSoldOut`.
 
 use super::*;
+use soroban_sdk::testutils::Events as _;
+use soroban_sdk::Event as _;
 
 fn tier(env: &Env, name: &str) -> String {
     String::from_str(env, name)
@@ -164,4 +166,49 @@ fn only_the_organizer_can_set_a_tier_cap() {
         client.try_set_tier_capacity(&stranger, &1, &tier(&env, "GA"), &Some(5u64)),
         Err(Ok(Error::NotOrganizer))
     );
+}
+
+/// Counts `TierCapacitySet` events matching one exact cap change (issue #515).
+fn count_tier_capacity_set(
+    env: &Env,
+    client: &TicketingContractClient,
+    tier_name: &str,
+    cap: Option<u64>,
+) -> usize {
+    let expected = TierCapacitySet {
+        event_id: 1,
+        tier: tier(env, tier_name),
+        cap,
+    }
+    .to_xdr(env, &client.address);
+    env.events()
+        .all()
+        .events()
+        .iter()
+        .filter(|event| **event == expected)
+        .count()
+}
+
+#[test]
+fn set_tier_capacity_publishes_the_cap_and_its_removal() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    client.set_tier_capacity(&organizer, &1, &tier(&env, "GA"), &Some(5u64));
+    assert_eq!(count_tier_capacity_set(&env, &client, "GA", Some(5)), 1);
+
+    client.set_tier_capacity(&organizer, &1, &tier(&env, "GA"), &None);
+    assert_eq!(count_tier_capacity_set(&env, &client, "GA", None), 1);
+}
+
+#[test]
+fn rejected_tier_capacity_publishes_nothing() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    assert_eq!(
+        client.try_set_tier_capacity(&organizer, &1, &tier(&env, "GA"), &Some(0u64)),
+        Err(Ok(Error::InvalidCapacity))
+    );
+    assert_eq!(count_tier_capacity_set(&env, &client, "GA", Some(0)), 0);
 }

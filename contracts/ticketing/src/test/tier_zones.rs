@@ -1,6 +1,8 @@
 //! Zone / gate access restrictions per tier (issue #80).
 
 use super::*;
+use soroban_sdk::testutils::Events as _;
+use soroban_sdk::Event as _;
 
 fn s(env: &Env, v: &str) -> String {
     String::from_str(env, v)
@@ -122,4 +124,56 @@ fn zone_lists_are_bounded_and_validated() {
         client.try_set_tier_zones(&stranger, &1, &s(&env, "VIP"), &zones(&env, &["floor"])),
         Err(Ok(Error::NotOrganizer))
     );
+}
+
+/// Counts `TierZonesSet` events matching one exact zone change (issue #515).
+fn count_tier_zones_set(
+    env: &Env,
+    client: &TicketingContractClient,
+    zone_list: Vec<String>,
+) -> usize {
+    let expected = TierZonesSet {
+        event_id: 1,
+        tier: s(env, "VIP"),
+        zones: zone_list,
+    }
+    .to_xdr(env, &client.address);
+    env.events()
+        .all()
+        .events()
+        .iter()
+        .filter(|event| **event == expected)
+        .count()
+}
+
+#[test]
+fn set_tier_zones_publishes_the_zone_list_and_its_clearing() {
+    let (env, client, _token, _asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    client.set_tier_zones(
+        &organizer,
+        &1,
+        &s(&env, "VIP"),
+        &zones(&env, &["vip-lounge", "floor"]),
+    );
+    assert_eq!(
+        count_tier_zones_set(&env, &client, zones(&env, &["vip-lounge", "floor"])),
+        1
+    );
+
+    client.set_tier_zones(&organizer, &1, &s(&env, "VIP"), &Vec::new(&env));
+    assert_eq!(count_tier_zones_set(&env, &client, Vec::new(&env)), 1);
+}
+
+#[test]
+fn rejected_tier_zones_publish_nothing() {
+    let (env, client, _token, _asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+
+    assert_eq!(
+        client.try_set_tier_zones(&organizer, &1, &s(&env, "VIP"), &zones(&env, &[""])),
+        Err(Ok(Error::InvalidZones))
+    );
+    assert_eq!(count_tier_zones_set(&env, &client, zones(&env, &[""])), 0);
 }
