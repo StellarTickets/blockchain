@@ -41,6 +41,10 @@ pub const MAX_TICKET_LABEL_LEN: u32 = 32;
 /// Maximum accepted length, in bytes, for a ticket metadata URI (Issue #109).
 pub const MAX_METADATA_URI_LEN: u32 = 256;
 
+/// Maximum accepted length, in bytes, for the collection `symbol` (issue #505).
+/// The collection `name` reuses `MAX_NAME_LEN`.
+pub const MAX_COLLECTION_SYMBOL_LEN: u32 = 12;
+
 /// Maximum number of event ids returned by one `list_organizer_events` page
 /// (Issue #112). Larger requested pages are clamped to this bound.
 pub const MAX_PAGE_SIZE: u32 = 50;
