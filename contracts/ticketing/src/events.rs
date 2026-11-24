@@ -1,5 +1,6 @@
 //! Contract events emitted by the ticketing contract.
 
+use soroban_sdk::{contractevent, Address, BytesN, String, Vec};
 use soroban_sdk::{contractevent, Address, BytesN, String, Symbol};
 
 #[contractevent]
@@ -270,6 +271,16 @@ pub struct TicketRefunded {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_price` after the tier price is saved (issue #514).
+/// Lets buyers and the backend audit what was charged and when.
+pub struct TierPriceSet {
+    /// Event whose tier was priced (topic).
+    #[topic]
+    pub event_id: u64,
+    /// Tier label that was priced.
+    pub tier: String,
+    /// New price, in the event's payment token.
+    pub price: i128,
 /// Emitted when an organizer changes one event setting (issue #516). `field`
 /// names the setting that changed, e.g. `capacity` or `royalty_splits`, so
 /// indexers can mirror the event config without re-reading the event.
@@ -288,6 +299,44 @@ pub struct GiftClaimCreated {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_capacity` after the cap is saved or removed (issue #515).
+/// `cap` is `None` when the cap was removed.
+pub struct TierCapacitySet {
+    /// Event whose tier cap changed (topic).
+    #[topic]
+    pub event_id: u64,
+    /// Tier label whose cap changed.
+    pub tier: String,
+    /// New cap, or `None` when the cap was removed.
+    pub cap: Option<u64>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_zones` after the zone list is saved or cleared (issue #515).
+/// `zones` is empty when the restriction was removed.
+pub struct TierZonesSet {
+    /// Event whose tier zones changed (topic).
+    #[topic]
+    pub event_id: u64,
+    /// Tier label whose zones changed.
+    pub tier: String,
+    /// New zone list, empty when the restriction was removed.
+    pub zones: Vec<String>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_perks` after the perk list is saved or cleared (issue #515).
+/// `perks` is empty when the perks were removed.
+pub struct TierPerksSet {
+    /// Event whose tier perks changed (topic).
+    #[topic]
+    pub event_id: u64,
+    /// Tier label whose perks changed.
+    pub tier: String,
+    /// New perk list, empty when the perks were removed.
+    pub perks: Vec<String>,
 /// Emitted when an organizer delists a ticket without revoking it (issue
 /// #518). The ticket returns to `Valid` under its current owner.
 pub struct ListingDelisted {

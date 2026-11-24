@@ -19,6 +19,11 @@ use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
 pub use events::{
     AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced,
+    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, ListingCancelled,
+    OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
+    PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
+    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
+    TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
     ContractInitialized, ContractUpgraded, EventCancelled, EventConfigChanged, EventCreated,
     ListingCancelled, ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved,
     OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
@@ -894,11 +899,18 @@ impl TicketingContract {
             return Err(Error::InvalidPrice);
         }
         Self::require_organizer(&env, event_id, &organizer)?;
-        let key = DataKey::TierPrice(event_id, tier);
+        let key = DataKey::TierPrice(event_id, tier.clone());
         env.storage().persistent().set(&key, &price);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        // Issue #514: price changes must be auditable, so publish each one.
+        TierPriceSet {
+            event_id,
+            tier,
+            price,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -942,6 +954,13 @@ impl TicketingContract {
             }
             None => env.storage().persistent().remove(&key),
         }
+        // Issue #515: publish every capacity change, including removal (`cap: None`).
+        TierCapacitySet {
+            event_id,
+            tier,
+            cap,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -1269,6 +1288,7 @@ impl TicketingContract {
             ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
+            // Issue #513: every owner change publishes TicketTransferred.
             TicketTransferred {
                 ticket_id,
                 from: from.clone(),
@@ -1376,6 +1396,11 @@ impl TicketingContract {
         ticket.resale_price = 0;
         env.storage().persistent().remove(&key);
         Self::save_ticket(&env, ticket_id, &ticket);
+        // Issue #513: gift claims change ownership, so they publish TicketTransferred.
+        TicketTransferred {
+            ticket_id,
+            from: claim.from,
+            to: ticket.owner.clone(),
         GiftClaimed {
             ticket_id,
             from: claim.from,
@@ -1492,7 +1517,7 @@ impl TicketingContract {
                 return Err(Error::InvalidZones);
             }
         }
-        let key = DataKey::TierZones(event_id, tier);
+        let key = DataKey::TierZones(event_id, tier.clone());
         if zones.is_empty() {
             env.storage().persistent().remove(&key);
         } else {
@@ -1501,6 +1526,13 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        // Issue #515: publish every zone change, including a cleared list.
+        TierZonesSet {
+            event_id,
+            tier,
+            zones,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -1537,7 +1569,7 @@ impl TicketingContract {
                 return Err(Error::InvalidPerks);
             }
         }
-        let key = DataKey::TierPerks(event_id, tier);
+        let key = DataKey::TierPerks(event_id, tier.clone());
         if perks.is_empty() {
             env.storage().persistent().remove(&key);
         } else {
@@ -1546,6 +1578,13 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        // Issue #515: publish every perk change, including a cleared list.
+        TierPerksSet {
+            event_id,
+            tier,
+            perks,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -2287,6 +2326,13 @@ impl TicketingContract {
         if seller_amount > 0 {
             token_client.transfer(&buyer, &seller, &seller_amount);
         }
+        // Issue #513: resale purchases change ownership, so they publish TicketTransferred.
+        TicketTransferred {
+            ticket_id,
+            from: seller.clone(),
+            to: buyer.clone(),
+        }
+        .publish(&env);
         TicketResold {
             ticket_id,
             seller,
@@ -2791,6 +2837,13 @@ impl TicketingContract {
                 if seller_amount > 0 {
                     token_client.transfer(&contract, &seller, &seller_amount);
                 }
+                // Issue #513: the auction winner receives the ticket, so publish TicketTransferred.
+                TicketTransferred {
+                    ticket_id,
+                    from: seller.clone(),
+                    to: winner.clone(),
+                }
+                .publish(&env);
                 AuctionSettled {
                     ticket_id,
                     seller,
@@ -2974,6 +3027,13 @@ impl TicketingContract {
         if seller_amount > 0 {
             token_client.transfer(&contract, &owner, &seller_amount);
         }
+        // Issue #513: an accepted offer changes ownership, so publish TicketTransferred.
+        TicketTransferred {
+            ticket_id,
+            from: owner.clone(),
+            to: buyer.clone(),
+        }
+        .publish(&env);
         OfferAccepted {
             ticket_id,
             seller: owner,

@@ -23,6 +23,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   for the dependency versioning policy and upgrade procedure.
 
 ### Added
+- `TierPriceSet`, `TierCapacitySet`, `TierZonesSet` and `TierPerksSet` events
+  emitted by the tier price, capacity, zone and perk setters (#514, #515).
+- `TicketTransferred` is now published for every owner change, including
+  `transfer_batch`, `claim_gift`, `buy_resale`, `settle_auction` and
+  `accept_offer` (#513). Status code `4` (`Refunded`) is documented for
+  integrators (#512).
 - SEP-50 `name()` and `symbol()`, set by the admin with
   `set_collection_metadata` (#505).
 - `EventConfigChanged` event from each event-level setter, with the setting
