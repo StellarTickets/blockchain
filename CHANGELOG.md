@@ -21,6 +21,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   for the dependency versioning policy and upgrade procedure.
 
 ### Added
+- `TierPriceSet`, `TierCapacitySet`, `TierZonesSet` and `TierPerksSet` events
+  emitted by the tier price, capacity, zone and perk setters (#514, #515).
+- `TicketTransferred` is now published for every owner change, including
+  `transfer_batch`, `claim_gift`, `buy_resale`, `settle_auction` and
+  `accept_offer` (#513). Status code `4` (`Refunded`) is documented for
+  integrators (#512).
 - Releases attach the contract spec as `stellar_tickets_ticketing.spec.json`
   and `.spec.xdr`, exported by `scripts/export-spec.sh` (`make spec`) (#60).
 - Sample event indexer in `examples/indexer` that decodes events from the
