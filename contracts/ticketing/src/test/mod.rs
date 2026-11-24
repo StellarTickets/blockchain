@@ -57,6 +57,7 @@ mod ticket_validity;
 mod tickets;
 mod tier_capacity;
 mod tier_perks;
+mod tier_price;
 mod tier_zones;
 mod total_tickets;
 mod transfer_controls;
