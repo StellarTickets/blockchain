@@ -708,12 +708,7 @@ impl TicketingContract {
         Self::require_organizer(&env, ticket.event_id, &organizer)?;
         // Issue #441: Reject terminal statuses (Revoked and Refunded) to prevent
         // resurrection of tickets that should stay dead.
-        if ticket.status == TicketStatus::Revoked {
-            return Err(Error::Revoked);
-        }
-        if ticket.status == TicketStatus::Refunded {
-            return Err(Error::AlreadyRefunded);
-        }
+        Self::require_not_terminal(&ticket)?;
         let used = Self::used_count_of(&env, ticket_id);
         if max_uses == 0 || max_uses < used {
             return Err(Error::InvalidMaxUses);
@@ -988,14 +983,7 @@ impl TicketingContract {
                 let token_address = Self::payment_token_for_event(&env, &event)?;
                 token_client.transfer(&buyer, env.current_contract_address(), &proceeds);
                 event.escrow_balance += proceeds;
-                let current_escrow = env
-                    .storage()
-                    .instance()
-                    .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
-                    .unwrap_or(0);
-                env.storage()
-                    .instance()
-                    .set(&DataKey::OutstandingEscrow(token_address), &(current_escrow + proceeds));
+                Self::adjust_escrow(&env, &token_address, proceeds);
                 env.storage()
                     .persistent()
                     .set(&DataKey::Event(event_id), &event);
@@ -1054,14 +1042,7 @@ impl TicketingContract {
         Self::save_event(&env, event_id, &event);
         if amount > 0 {
             let token_address = Self::payment_token_for_event(&env, &event)?;
-            let current_escrow = env
-                .storage()
-                .instance()
-                .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
-                .unwrap_or(0);
-            env.storage()
-                .instance()
-                .set(&DataKey::OutstandingEscrow(token_address.clone()), &(current_escrow - amount));
+            Self::adjust_escrow(&env, &token_address, -amount);
             let token_client =
                 token::Client::new(&env, &token_address);
             token_client.transfer(&env.current_contract_address(), &organizer, &amount);
@@ -1244,7 +1225,7 @@ impl TicketingContract {
             Self::ensure_transfer_allowed(&env, &ticket, &event)?;
             Self::move_owner_balance(&env, ticket_id, &ticket.owner, &to);
             ticket.owner = to.clone();
-            ticket.transfers += 1;
+            ticket.transfers = ticket.transfers.saturating_add(1);
             ticket.status = TicketStatus::Valid;
             ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
@@ -1339,7 +1320,7 @@ impl TicketingContract {
 
         Self::move_owner_balance(&env, ticket_id, &ticket.owner, &recipient);
         ticket.owner = recipient;
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         env.storage().persistent().remove(&key);
@@ -1818,9 +1799,7 @@ impl TicketingContract {
         Self::require_not_paused(&env)?;
         let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
         Self::require_organizer(&env, ticket.event_id, &organizer)?;
-        if ticket.status == TicketStatus::Revoked {
-            return Err(Error::Revoked);
-        }
+        Self::require_not_terminal(&ticket)?;
         ticket.seat = seat;
         Self::save_ticket(&env, ticket_id, &ticket);
         Ok(())
@@ -1870,15 +1849,7 @@ impl TicketingContract {
                     token_client.transfer(&admin, &ticket.owner, &fee);
                 }
                 event.escrow_balance -= escrowed_amount;
-                let current_escrow = env
-                    .storage()
-                    .instance()
-                    .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
-                    .unwrap_or(0);
-                env.storage().instance().set(
-                    &DataKey::OutstandingEscrow(token_address),
-                    &(current_escrow - escrowed_amount),
-                );
+                Self::adjust_escrow(&env, &token_address, -escrowed_amount);
                 String::from_str(&env, "escrow")
             } else {
                 // For non-escrow events, the refund comes from the organizer
@@ -2174,7 +2145,7 @@ impl TicketingContract {
         let seller = ticket.owner.clone();
         Self::move_owner_balance(&env, ticket_id, &seller, &buyer);
         ticket.owner = buyer.clone();
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
@@ -2608,7 +2579,7 @@ impl TicketingContract {
                 let (royalty, platform_fee, seller_amount) = Self::resale_split(&event, bid, fee_bps)?;
                 Self::move_owner_balance(&env, ticket_id, &seller, winner);
                 ticket.owner = winner.clone();
-                ticket.transfers += 1;
+                ticket.transfers = ticket.transfers.saturating_add(1);
                 ticket.status = TicketStatus::Valid;
                 ticket.resale_price = 0;
                 Self::remove_gift_claim(&env, ticket_id);
@@ -2790,7 +2761,7 @@ impl TicketingContract {
         Self::adjust_resale_funds(&env, &offer.token, -offer.amount);
         Self::move_owner_balance(&env, ticket_id, &owner, &buyer);
         ticket.owner = buyer.clone();
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
@@ -3325,7 +3296,7 @@ impl TicketingContract {
         Self::ensure_no_auction(env, ticket_id)?;
         Self::move_owner_balance(env, ticket_id, &ticket.owner, to);
         ticket.owner = to.clone();
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(env, ticket_id);
@@ -3387,6 +3358,20 @@ impl TicketingContract {
         env.storage()
             .instance()
             .set(&DataKey::OutstandingResaleFunds(token.clone()), &total);
+    }
+
+    /// Adjusts the outstanding escrow for `token` by `delta` (issue #616).
+    /// Positive delta increases escrow (proceeds held for the organizer);
+    /// negative delta decreases it (payout or refund).
+    fn adjust_escrow(env: &Env, token: &Address, delta: i128) {
+        let current = env
+            .storage()
+            .instance()
+            .get::<_, i128>(&DataKey::OutstandingEscrow(token.clone()))
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::OutstandingEscrow(token.clone()), &(current + delta));
     }
 
     /// Platform fee owed on a primary sale of `price`, rounded down (issue #104, #427).

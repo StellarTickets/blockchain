@@ -1547,6 +1547,110 @@ fn revoke_batch_rejects_already_revoked_ticket() {
     assert_eq!(result, Err(Ok(Error::Revoked)));
 }
 
+/// Issue #625: `refund_primary` must reject tickets when called after
+/// `purchased_at + window`, including the `None` window case (no refunds allowed).
+#[test]
+fn refund_primary_rejects_ticket_after_window() {
+    let (env, client, token, token_asset, _admin, organizer) = setup();
+    // Create an event with a 100-second refund window.
+    client.create_event(
+        &organizer,
+        &1,
+        &EventParams {
+            name: String::from_str(&env, "Limited Refund Event"),
+            category: String::from_str(&env, "concert"),
+            max_resale_multiplier_bps: 12_000,
+            royalty_bps: 0,
+            starts_at: 999_999,
+            transfer_freeze_seconds: 0,
+            resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: Some(100),
+            presale_starts_at: None,
+            presale_ends_at: None,
+        },
+    );
+
+    let buyer = Address::generate(&env);
+    token_asset.mint(&buyer, &2_000i128);
+    client.set_tier_price(&organizer, &1, &String::from_str(&env, "GA"), &1_000i128);
+
+    // Purchase at ledger timestamp 1000.
+    env.ledger().with_mut(|li| li.timestamp = 1000);
+    let ticket_id = client.purchase_primary(
+        &buyer,
+        &1,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+    );
+    let ticket = client.get_ticket(&ticket_id);
+    assert_eq!(ticket.purchased_at, 1000);
+
+    // Exactly at the deadline (1000 + 100 = 1100): should still succeed.
+    env.ledger().with_mut(|li| li.timestamp = 1100);
+    let result_at_deadline = client.try_refund_primary(&buyer, &ticket_id);
+    assert!(result_at_deadline.is_ok(), "refund at exact deadline should succeed");
+
+    // Re-issue the ticket for the next test.
+    client.revoke_ticket(&organizer, &ticket_id);
+    env.ledger().with_mut(|li| li.timestamp = 1000);
+    let ticket_id2 = client.purchase_primary(
+        &buyer,
+        &1,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "2"),
+    );
+
+    // One second after the deadline (1000 + 100 + 1 = 1101): must be rejected.
+    env.ledger().with_mut(|li| li.timestamp = 1101);
+    let result_after = client.try_refund_primary(&buyer, &ticket_id2);
+    assert_eq!(result_after, Err(Ok(Error::RefundWindowExpired)), 
+        "refund after window should fail with RefundWindowExpired");
+}
+
+/// Issue #625: `refund_primary` must reject tickets when the event has
+/// `refund_window_seconds = None` (no refunds allowed at all).
+#[test]
+fn refund_primary_rejects_ticket_with_no_window() {
+    let (env, client, token, token_asset, _admin, organizer) = setup();
+    // Create an event with NO refund window.
+    client.create_event(
+        &organizer,
+        &1,
+        &EventParams {
+            name: String::from_str(&env, "No Refunds Event"),
+            category: String::from_str(&env, "concert"),
+            max_resale_multiplier_bps: 12_000,
+            royalty_bps: 0,
+            starts_at: 999_999,
+            transfer_freeze_seconds: 0,
+            resale_cutoff_seconds: 0,
+            max_per_wallet: None,
+            refund_window_seconds: None,
+            presale_starts_at: None,
+            presale_ends_at: None,
+        },
+    );
+
+    let buyer = Address::generate(&env);
+    token_asset.mint(&buyer, &2_000i128);
+    client.set_tier_price(&organizer, &1, &String::from_str(&env, "GA"), &1_000i128);
+
+    env.ledger().with_mut(|li| li.timestamp = 1000);
+    let ticket_id = client.purchase_primary(
+        &buyer,
+        &1,
+        &String::from_str(&env, "GA"),
+        &String::from_str(&env, "1"),
+    );
+
+    // Attempt refund immediately after purchase.
+    env.ledger().with_mut(|li| li.timestamp = 1001);
+    let result = client.try_refund_primary(&buyer, &ticket_id);
+    assert_eq!(result, Err(Ok(Error::RefundWindowExpired)), 
+        "refund with no window should fail with RefundWindowExpired");
+}
+
 /// Issue #372: `claim_gift` internally calls `transfer_frozen`, but no test
 /// confirms that the claim is rejected once the event enters its transfer
 /// freeze window. Create a claim while transfers are open, advance the ledger
