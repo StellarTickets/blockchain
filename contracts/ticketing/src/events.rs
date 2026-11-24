@@ -1,5 +1,4 @@
 //! Contract events emitted by the ticketing contract.
-#![allow(missing_docs)]
 
 use soroban_sdk::{contractevent, Address, BytesN, String};
 
@@ -255,4 +254,16 @@ pub struct OfferCancelled {
     pub ticket_id: u64,
     pub buyer: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when a ticket is refunded to its owner (issue #493).
+/// Emitted by `refund_primary` and `revoke_with_refund` after the refund transfer.
+pub struct TicketRefunded {
+    #[topic]
+    pub ticket_id: u64,
+    pub to: Address,
+    pub amount: i128,
+    pub source: String,
 }

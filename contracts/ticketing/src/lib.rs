@@ -1,7 +1,7 @@
 //! StellarTickets ticketing smart contract for Soroban on Stellar.
 #![no_std]
-#![allow(missing_docs)]
-#![allow(clippy::pedantic)]
+#![warn(missing_docs)]
+#![warn(clippy::pedantic)]
 
 mod constants;
 mod error;
@@ -22,8 +22,8 @@ pub use events::{
     ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, ListingCancelled,
     OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketResold,
-    TicketTransferred,
+    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
+    TicketResold, TicketTransferred,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -45,11 +45,10 @@ use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, Ma
 /// when adding new entry points. See
 /// `require_auth_runs_before_business_validation` in `test/auth.rs` for the
 /// regression test.
-#[allow(missing_docs)]
+/// The main ticketing contract structure.
 #[contract]
 pub struct TicketingContract;
 
-#[allow(missing_docs)]
 #[contractimpl]
 impl TicketingContract {
     /// One-time setup. `payment_token` is the Stellar Asset Contract (or any
@@ -177,20 +176,22 @@ impl TicketingContract {
         if env.ledger().sequence() < pending.apply_after_ledger {
             return Err(Error::TimelockNotElapsed);
         }
+        // Only block on escrow in the token being replaced (issue #453)
+        let old_token = Self::payment_token(&env)?;
         let outstanding_escrow = env
             .storage()
             .instance()
-            .get::<_, i128>(&DataKey::OutstandingEscrow)
+            .get::<_, i128>(&DataKey::OutstandingEscrow(old_token.clone()))
             .unwrap_or(0);
         if outstanding_escrow > 0 {
             return Err(Error::EscrowNotEnabled);
         }
         // Bids and offers are held in the active token, so they must settle or
-        // be refunded before the token can change (issues #105, #106).
-        if Self::resale_funds_outstanding(&env) > 0 {
+        // be refunded before the token can change (issues #105, #106, #454).
+        // Only check resale funds in the token being replaced.
+        if Self::resale_funds_outstanding(&env, &old_token) > 0 {
             return Err(Error::ResaleFundsOutstanding);
         }
-        let old_token = Self::payment_token(&env)?;
         // Capture the decimals of the token becoming active so clients always
         // see decimals matching the active payment token (issue #233).
         let decimals = Self::ensure_token_contract(&env, &pending.token)?;
@@ -984,16 +985,17 @@ impl TicketingContract {
         }
         if proceeds > 0 {
             if event.escrow_enabled {
+                let token_address = Self::payment_token_for_event(&env, &event)?;
                 token_client.transfer(&buyer, env.current_contract_address(), &proceeds);
                 event.escrow_balance += proceeds;
                 let current_escrow = env
                     .storage()
                     .instance()
-                    .get::<_, i128>(&DataKey::OutstandingEscrow)
+                    .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
                     .unwrap_or(0);
                 env.storage()
                     .instance()
-                    .set(&DataKey::OutstandingEscrow, &(current_escrow + proceeds));
+                    .set(&DataKey::OutstandingEscrow(token_address), &(current_escrow + proceeds));
                 env.storage()
                     .persistent()
                     .set(&DataKey::Event(event_id), &event);
@@ -1051,16 +1053,17 @@ impl TicketingContract {
         event.escrow_balance = 0;
         Self::save_event(&env, event_id, &event);
         if amount > 0 {
+            let token_address = Self::payment_token_for_event(&env, &event)?;
             let current_escrow = env
                 .storage()
                 .instance()
-                .get::<_, i128>(&DataKey::OutstandingEscrow)
+                .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
                 .unwrap_or(0);
             env.storage()
                 .instance()
-                .set(&DataKey::OutstandingEscrow, &(current_escrow - amount));
+                .set(&DataKey::OutstandingEscrow(token_address.clone()), &(current_escrow - amount));
             let token_client =
-                token::Client::new(&env, &Self::payment_token_for_event(&env, &event)?);
+                token::Client::new(&env, &token_address);
             token_client.transfer(&env.current_contract_address(), &organizer, &amount);
         }
         Ok(())
@@ -1853,7 +1856,9 @@ impl TicketingContract {
             let fee = Self::platform_fee_on(&env, ticket.original_price)?;
             let escrowed_amount = ticket.original_price - fee;
             
-            if event.escrow_enabled && event.escrow_balance >= escrowed_amount {
+            let refund_amount = ticket.original_price;
+            let token_address = Self::payment_token_for_event(&env, &event)?;
+            let refund_source = if event.escrow_enabled && event.escrow_balance >= escrowed_amount {
                 // Refund from escrow (which only holds price - fee) plus clawback the fee from admin
                 token_client.transfer(&env.current_contract_address(), &ticket.owner, &escrowed_amount);
                 if fee > 0 {
@@ -1868,20 +1873,31 @@ impl TicketingContract {
                 let current_escrow = env
                     .storage()
                     .instance()
-                    .get::<_, i128>(&DataKey::OutstandingEscrow)
+                    .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
                     .unwrap_or(0);
                 env.storage().instance().set(
-                    &DataKey::OutstandingEscrow,
+                    &DataKey::OutstandingEscrow(token_address),
                     &(current_escrow - escrowed_amount),
                 );
+                String::from_str(&env, "escrow")
             } else {
                 // For non-escrow events, the refund comes from the organizer
                 // Since organizer is calling this function, they can authorize the transfer
                 token_client.transfer(&organizer, &ticket.owner, &ticket.original_price);
-            }
+                String::from_str(&env, "organizer")
+            };
             // The refunded ticket no longer counts against the owner's
             // `max_per_wallet` allowance.
             Self::decrement_wallet_purchase_count(&env, ticket.event_id, &ticket.owner);
+            
+            // Emit refund event (issue #493)
+            TicketRefunded {
+                ticket_id,
+                to: ticket.owner.clone(),
+                amount: refund_amount,
+                source: refund_source,
+            }
+            .publish(&env);
         }
         ticket.status = TicketStatus::Revoked;
         ticket.resale_price = 0;
@@ -2471,12 +2487,14 @@ impl TicketingContract {
         ticket.status = TicketStatus::Resale;
         ticket.resale_price = 0;
         Self::save_ticket(&env, ticket_id, &ticket);
+        let token_address = Self::payment_token_for_event(&env, &event)?;
         let auction = Auction {
             seller: owner.clone(),
             reserve_price,
             ends_at,
             highest_bidder: None,
             highest_bid: 0,
+            token: token_address,
         };
         Self::save_auction(&env, ticket_id, &auction);
         // AuctionStarted event not yet implemented
@@ -2537,10 +2555,10 @@ impl TicketingContract {
         auction.highest_bidder = Some(bidder.clone());
         auction.highest_bid = amount;
         Self::save_auction(&env, ticket_id, &auction);
-        Self::adjust_resale_funds(&env, amount - refunded);
+        Self::adjust_resale_funds(&env, &auction.token, amount - refunded);
 
         // --- interactions: take the new bid, then refund the one it displaced. ---
-        let token_client = token::Client::new(&env, &token_address);
+        let token_client = token::Client::new(&env, &auction.token);
         token_client.transfer(&bidder, env.current_contract_address(), &amount);
         if let Some((previous, previous_bid)) = outbid {
             token_client.transfer(&env.current_contract_address(), &previous, &previous_bid);
@@ -2582,7 +2600,7 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .remove(&DataKey::Auction(ticket_id));
-        Self::adjust_resale_funds(&env, -bid);
+        Self::adjust_resale_funds(&env, &auction.token, -bid);
         match &auction.highest_bidder {
             Some(winner) if listed => {
                 let seller = ticket.owner.clone();
@@ -2597,7 +2615,7 @@ impl TicketingContract {
                 Self::save_ticket(&env, ticket_id, &ticket);
 
                 // --- interactions: pay out from the bid the contract holds. ---
-                let token_client = token::Client::new(&env, &token_address);
+                let token_client = token::Client::new(&env, &auction.token);
                 let contract = env.current_contract_address();
                 if royalty > 0 {
                     Self::pay_royalty(&token_client, &contract, &event, royalty)?;
@@ -2630,7 +2648,7 @@ impl TicketingContract {
             }
             Some(bidder) => {
                 // Revoked while bidding ran: no ticket moves, so return the bid.
-                token::Client::new(&env, &token_address).transfer(
+                token::Client::new(&env, &auction.token).transfer(
                     &env.current_contract_address(),
                     bidder,
                     &bid,
@@ -2705,7 +2723,7 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
-        Self::adjust_resale_funds(&env, amount);
+        Self::adjust_resale_funds(&env, &token_address, amount);
 
         // --- interactions ---
         token::Client::new(&env, &token_address).transfer(
@@ -2769,7 +2787,7 @@ impl TicketingContract {
 
         // --- effects: settle state before any untrusted external call. ---
         env.storage().persistent().remove(&key);
-        Self::adjust_resale_funds(&env, -offer.amount);
+        Self::adjust_resale_funds(&env, &offer.token, -offer.amount);
         Self::move_owner_balance(&env, ticket_id, &owner, &buyer);
         ticket.owner = buyer.clone();
         ticket.transfers += 1;
@@ -2841,7 +2859,7 @@ impl TicketingContract {
 
         // --- effects, then refund. ---
         env.storage().persistent().remove(&key);
-        Self::adjust_resale_funds(&env, -offer.amount);
+        Self::adjust_resale_funds(&env, &offer.token, -offer.amount);
         token::Client::new(&env, &offer.token).transfer(
             &env.current_contract_address(),
             &buyer,
@@ -3353,20 +3371,22 @@ impl TicketingContract {
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
     }
 
-    /// Total funds the contract holds for resale bids and offers (issues #105, #106).
-    fn resale_funds_outstanding(env: &Env) -> i128 {
+    /// Total funds the contract holds for resale bids and offers for a specific
+    /// token (issues #105, #106, #454).
+    fn resale_funds_outstanding(env: &Env, token: &Address) -> i128 {
         env.storage()
             .instance()
-            .get::<_, i128>(&DataKey::OutstandingResaleFunds)
+            .get::<_, i128>(&DataKey::OutstandingResaleFunds(token.clone()))
             .unwrap_or(0)
     }
 
-    /// Moves the contract's resale funds total by `delta` (issues #105, #106).
-    fn adjust_resale_funds(env: &Env, delta: i128) {
-        let total = Self::resale_funds_outstanding(env) + delta;
+    /// Moves the contract's resale funds total by `delta` for a specific token
+    /// (issues #105, #106, #454).
+    fn adjust_resale_funds(env: &Env, token: &Address, delta: i128) {
+        let total = Self::resale_funds_outstanding(env, token) + delta;
         env.storage()
             .instance()
-            .set(&DataKey::OutstandingResaleFunds, &total);
+            .set(&DataKey::OutstandingResaleFunds(token.clone()), &total);
     }
 
     /// Platform fee owed on a primary sale of `price`, rounded down (issue #104, #427).
@@ -3931,6 +3951,9 @@ impl TicketingContract {
         ticket_id
     }
 
+    /// Pauses all state-changing operations on the contract.
+    /// Only callable by the admin. While paused, all functions that modify
+    /// state will reject with `Error::ContractPaused`.
     pub fn pause(env: Env, admin: Address) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         Self::require_admin(&env, &admin)?;
@@ -3938,6 +3961,8 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Unpauses the contract, re-enabling all state-changing operations.
+    /// Only callable by the admin.
     pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         Self::require_admin(&env, &admin)?;
@@ -3945,6 +3970,7 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Returns whether the contract is currently paused.
     pub fn is_paused(env: Env) -> bool {
         env.storage()
             .instance()
@@ -3964,6 +3990,9 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Refunds a ticket purchased through on-chain primary sale back to the buyer.
+    /// Only works within the event's refund window and requires the ticket to have
+    /// been purchased via `purchase_primary`. Refunds come from escrow when enabled.
     pub fn refund_primary(env: Env, buyer: Address, ticket_id: u64) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         buyer.require_auth();
@@ -4019,7 +4048,9 @@ impl TicketingContract {
             let fee = Self::platform_fee_on(&env, ticket.original_price)?;
             let escrowed_amount = ticket.original_price - fee;
             
-            if event.escrow_enabled && event.escrow_balance >= escrowed_amount {
+            let refund_amount = ticket.original_price;
+            let token_address = Self::payment_token_for_event(&env, &event)?;
+            let refund_source = if event.escrow_enabled && event.escrow_balance >= escrowed_amount {
                 // Refund from escrow (which only holds price - fee) plus clawback the fee from admin
                 token_client.transfer(&env.current_contract_address(), &buyer, &escrowed_amount);
                 if fee > 0 {
@@ -4034,19 +4065,29 @@ impl TicketingContract {
                 let current_escrow = env
                     .storage()
                     .instance()
-                    .get::<_, i128>(&DataKey::OutstandingEscrow)
+                    .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
                     .unwrap_or(0);
                 env.storage().instance().set(
-                    &DataKey::OutstandingEscrow,
+                    &DataKey::OutstandingEscrow(token_address),
                     &(current_escrow - escrowed_amount),
                 );
                 Self::save_event(&env, ticket.event_id, &event);
+                String::from_str(&env, "escrow")
             } else {
                 // For non-escrow events, the full refund comes from the organizer
                 // This requires organizer authorization, which is NOT available in buyer-initiated refunds
                 // So buyer-initiated refunds only work with escrow enabled
                 return Err(Error::EscrowNotEnabled);
+            };
+            
+            // Emit refund event (issue #493)
+            TicketRefunded {
+                ticket_id,
+                to: buyer.clone(),
+                amount: refund_amount,
+                source: refund_source,
             }
+            .publish(&env);
         }
         Self::decrement_wallet_purchase_count(&env, ticket.event_id, &buyer);
         Ok(())

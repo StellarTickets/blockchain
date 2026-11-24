@@ -240,6 +240,7 @@ pub struct GiftClaim {
 /// until its bidder is outbid and refunded.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// A timed auction on a resale ticket, allowing competitive bidding (issue #105).
 pub struct Auction {
     /// Owner who started the auction. The ticket must still belong to them
     /// when the auction settles.
@@ -252,6 +253,10 @@ pub struct Auction {
     pub highest_bidder: Option<Address>,
     /// Amount of the highest bid, held by the contract. Zero before the first bid.
     pub highest_bid: i128,
+    /// Payment token the auction and bids are denominated in (issue #454).
+    /// Stored so bids are refunded in the correct token even if the event's
+    /// token changes after bidding starts.
+    pub token: Address,
 }
 
 /// A buyer's offer on a listed ticket, held in escrow until it is accepted or
@@ -354,9 +359,10 @@ pub enum DataKey {
     /// Presence marks an organizer the admin has approved to create events
     /// (issue #135).
     ApprovedOrganizer(Address),
-    /// Total outstanding escrow balance across all events (issue #317).
+    /// Total outstanding escrow balance per payment token (issue #453).
     /// Used to prevent payment token changes while funds are in escrow.
-    OutstandingEscrow,
+    /// Keyed by token address to track amounts in each denomination separately.
+    OutstandingEscrow(Address),
     /// Event id at a position in an organizer's event list, keyed by the
     /// organizer and a zero-based index (issue #112). Lets the event list be
     /// read in pages without loading every event.
@@ -421,9 +427,10 @@ pub enum DataKey {
     /// Nominated admin awaiting acceptance via accept_admin (issue #100).
     /// Absent when no admin transfer is pending.
     PendingAdmin,
-    /// Funds the contract holds for resale bids and offers, across all tickets
-    /// (issues #105, #106). Blocks a payment token change while non-zero.
-    OutstandingResaleFunds,
+    /// Funds the contract holds for resale bids and offers, per payment token
+    /// (issues #105, #106, #454). Blocks a payment token change while non-zero.
+    /// Keyed by token address to track amounts in each denomination separately.
+    OutstandingResaleFunds(Address),
     /// Timed auction for a ticket, keyed by ticket id (issue #105).
     Auction(u64),
     /// Escrowed offer from one buyer on one ticket (issue #106).
