@@ -822,7 +822,8 @@ impl TicketingContract {
     /// the same order as `recipients`.
     ///
     /// Bounded by `MAX_BATCH_SIZE` and atomic: if any recipient fails
-    /// validation, no ticket from this call is minted.
+    /// validation, no ticket from this call is minted. Each recipient may set
+    /// its own `metadata_uri` (issue #508), read back through `token_uri`.
     ///
     /// # Errors
     ///
@@ -849,19 +850,28 @@ impl TicketingContract {
         Self::ensure_capacity(&event, recipients.len() as u64)?;
         let mut ticket_ids = Vec::new(&env);
         for recipient in recipients.iter() {
-            if recipient.price < 0 {
+            let TicketRecipient {
+                to,
+                tier,
+                seat,
+                price,
+                metadata_uri,
+            } = recipient;
+            if price < 0 {
                 return Err(Error::InvalidPrice);
             }
-            Self::validate_ticket_labels(&recipient.tier, &recipient.seat)?;
-            Self::reserve_tier_capacity(&env, event_id, &recipient.tier, 1)?;
-            let ticket_id = Self::mint(
-                &env,
-                event_id,
-                recipient.to,
-                recipient.tier,
-                recipient.seat,
-                recipient.price,
-            );
+            Self::validate_ticket_labels(&tier, &seat)?;
+            // Issue #508: a batch entry carries the same bounded URI that
+            // `issue_ticket_with_metadata` accepts, and is validated before any
+            // mint so a bad URI rejects the whole batch.
+            if let Some(uri) = &metadata_uri {
+                Self::validate_label(uri, MAX_METADATA_URI_LEN)?;
+            }
+            Self::reserve_tier_capacity(&env, event_id, &tier, 1)?;
+            let ticket_id = Self::mint(&env, event_id, to, tier, seat, price);
+            if let Some(uri) = &metadata_uri {
+                Self::store_metadata_uri(&env, ticket_id, uri);
+            }
             ticket_ids.push_back(ticket_id);
         }
         Self::increment_tickets_issued(&env, event_id, recipients.len() as u64);

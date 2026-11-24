@@ -94,6 +94,7 @@ fn a_batch_that_exceeds_the_tier_cap_is_rejected_whole() {
             tier: tier(&env, "GA"),
             seat: seat(&env),
             price: 1_000,
+            metadata_uri: None,
         });
     }
 

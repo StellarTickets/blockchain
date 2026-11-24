@@ -171,6 +171,9 @@ pub struct TicketRecipient {
     pub seat: String,
     /// Price paid at primary sale; used for resale caps and refunds.
     pub price: i128,
+    /// Optional metadata URI for this ticket, at most `MAX_METADATA_URI_LEN`
+    /// bytes (issue #508). `None` mints the ticket without one.
+    pub metadata_uri: Option<String>,
 }
 
 /// A ticket minted for an event.

@@ -16,6 +16,7 @@ fn recipient(env: &Env, to: &Address, price: i128) -> TicketRecipient {
         tier: ga(env),
         seat: String::from_str(env, "unassigned"),
         price,
+        metadata_uri: None,
     }
 }
 
@@ -157,4 +158,100 @@ fn issue_tickets_is_organizer_only() {
         client.try_issue_tickets(&stranger, &1, &recipients),
         Err(Ok(Error::NotOrganizer))
     );
+}
+
+// Issue #508: each batch recipient can carry its own metadata URI.
+
+fn recipient_with_uri(env: &Env, to: &Address, uri: Option<&str>) -> TicketRecipient {
+    TicketRecipient {
+        to: to.clone(),
+        tier: ga(env),
+        seat: String::from_str(env, "unassigned"),
+        price: 1_000,
+        metadata_uri: uri.map(|uri| String::from_str(env, uri)),
+    }
+}
+
+#[test]
+fn batch_sets_metadata_uri_per_recipient() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let (first, second, third) = (
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+    );
+    let mut recipients = Vec::new(&env);
+    recipients.push_back(recipient_with_uri(&env, &first, Some("ipfs://a/1.json")));
+    recipients.push_back(recipient_with_uri(&env, &second, None));
+    recipients.push_back(recipient_with_uri(&env, &third, Some("ipfs://a/3.json")));
+
+    let ids = client.issue_tickets(&organizer, &1, &recipients);
+
+    assert_eq!(
+        client.token_uri(&ids.get(0).unwrap()),
+        String::from_str(&env, "ipfs://a/1.json")
+    );
+    assert_eq!(
+        client.try_token_uri(&ids.get(1).unwrap()),
+        Err(Ok(Error::MetadataUriNotSet))
+    );
+    assert_eq!(
+        client.token_uri(&ids.get(2).unwrap()),
+        String::from_str(&env, "ipfs://a/3.json")
+    );
+}
+
+#[test]
+fn batch_metadata_uri_is_bounded_and_rejects_the_whole_batch() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let too_long = "u".repeat(MAX_METADATA_URI_LEN as usize + 1);
+    let mut recipients = Vec::new(&env);
+    recipients.push_back(recipient_with_uri(&env, &Address::generate(&env), None));
+    recipients.push_back(recipient_with_uri(
+        &env,
+        &Address::generate(&env),
+        Some(&too_long),
+    ));
+
+    assert_eq!(
+        client.try_issue_tickets(&organizer, &1, &recipients),
+        Err(Ok(Error::StringTooLong))
+    );
+    assert_eq!(client.get_event(&1).tickets_issued, 0);
+}
+
+#[test]
+fn batch_accepts_a_uri_at_the_length_limit() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let at_limit = "u".repeat(MAX_METADATA_URI_LEN as usize);
+    let mut recipients = Vec::new(&env);
+    recipients.push_back(recipient_with_uri(
+        &env,
+        &Address::generate(&env),
+        Some(&at_limit),
+    ));
+
+    let ids = client.issue_tickets(&organizer, &1, &recipients);
+
+    assert_eq!(
+        client.token_uri(&ids.get(0).unwrap()),
+        String::from_str(&env, &at_limit)
+    );
+}
+
+#[test]
+fn batch_rejects_an_empty_metadata_uri() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let mut recipients = Vec::new(&env);
+    recipients.push_back(recipient_with_uri(&env, &Address::generate(&env), Some("")));
+
+    assert_eq!(
+        client.try_issue_tickets(&organizer, &1, &recipients),
+        Err(Ok(Error::EmptyNameOrCategory))
+    );
+    assert_eq!(client.get_event(&1).tickets_issued, 0);
 }
