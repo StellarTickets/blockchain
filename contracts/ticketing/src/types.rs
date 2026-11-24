@@ -424,6 +424,9 @@ pub enum DataKey {
     /// `token_uri` returns `{base}/{token_id}` from it. Instance storage, so one
     /// value covers every event. Absent means no fallback.
     BaseTokenUri,
+    /// Number of an event's tickets that were refunded or revoked (issue #511).
+    /// `active_supply` subtracts it from `TicketsIssued`. Absent means zero.
+    RetiredTickets(u64),
     /// Highest royalty_bps across all events, cached so set_platform_fee can
     /// validate that the platform fee plus the highest royalty never exceeds
     /// 100% (issue #103). Zero when no events have been created.

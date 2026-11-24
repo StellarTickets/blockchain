@@ -1877,6 +1877,7 @@ impl TicketingContract {
         Self::require_organizer(&env, ticket.event_id, &organizer)?;
         Self::require_not_terminal(&ticket)?;
         ticket.status = TicketStatus::Revoked;
+        Self::retire_ticket(&env, ticket.event_id);
         // A revoked ticket must not keep a live resale asking price (issue
         // #129): `resale_price` is the marker a listing is read from, so
         // leaving it non-zero kept listing data attached to a dead ticket.
@@ -1984,6 +1985,7 @@ impl TicketingContract {
             .publish(&env);
         }
         ticket.status = TicketStatus::Revoked;
+        Self::retire_ticket(&env, ticket.event_id);
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
         Self::save_ticket(&env, ticket_id, &ticket);
@@ -2017,6 +2019,7 @@ impl TicketingContract {
             Self::require_organizer(&env, ticket.event_id, &organizer)?;
             Self::require_not_terminal(&ticket)?;
             ticket.status = TicketStatus::Revoked;
+            Self::retire_ticket(&env, ticket.event_id);
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
         }
@@ -2677,6 +2680,27 @@ impl TicketingContract {
             .instance()
             .get(&DataKey::CollectionSymbol)
             .ok_or(Error::CollectionMetadataNotSet)
+    }
+
+    /// Tickets an event has issued that are still in circulation (issue #511).
+    ///
+    /// This is `Event.tickets_issued` minus the tickets refunded or revoked
+    /// since issuance. Tickets that are used at the gate still count, since they
+    /// were sold and attended. `tickets_issued` and tier capacity remain lifetime
+    /// counters, so a refunded seat is not sold again.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::EventNotFound` when the event does not exist.
+    pub fn active_supply(env: Env, event_id: u64) -> Result<u64, Error> {
+        Self::extend_instance_ttl(&env);
+        let event = Self::get_event_inner(&env, event_id)?;
+        let retired: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RetiredTickets(event_id))
+            .unwrap_or(0);
+        Ok(event.tickets_issued.saturating_sub(retired))
     }
 
     /// Starts a timed auction for an owned, valid ticket (issue #105). Bids are
@@ -3581,6 +3605,18 @@ impl TicketingContract {
         Ok(())
     }
 
+    /// Counts one ticket of an event as out of circulation (issue #511). Called
+    /// once per ticket when it moves to `Refunded` or `Revoked`, which are
+    /// terminal, so a ticket is never counted twice.
+    fn retire_ticket(env: &Env, event_id: u64) {
+        let key = DataKey::RetiredTickets(event_id);
+        let retired: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(retired + 1));
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
     /// Stores a ticket's metadata URI under its own key (issue #109).
     fn store_metadata_uri(env: &Env, ticket_id: u64, uri: &String) {
         let key = DataKey::TicketMetadataUri(ticket_id);
@@ -4359,6 +4395,7 @@ impl TicketingContract {
             return Err(Error::RefundWindowExpired);
         }
         ticket.status = TicketStatus::Refunded;
+        Self::retire_ticket(&env, ticket.event_id);
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
         Self::save_ticket(&env, ticket_id, &ticket);
