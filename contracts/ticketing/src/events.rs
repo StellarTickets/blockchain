@@ -1,6 +1,6 @@
 //! Contract events emitted by the ticketing contract.
 
-use soroban_sdk::{contractevent, Address, BytesN, String};
+use soroban_sdk::{contractevent, Address, BytesN, String, Vec};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -266,4 +266,48 @@ pub struct TicketRefunded {
     pub to: Address,
     pub amount: i128,
     pub source: String,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_price` after the tier price is saved (issue #514).
+/// Lets buyers and the backend audit what was charged and when.
+pub struct TierPriceSet {
+    #[topic]
+    pub event_id: u64,
+    pub tier: String,
+    pub price: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_capacity` after the cap is saved or removed (issue #515).
+/// `cap` is `None` when the cap was removed.
+pub struct TierCapacitySet {
+    #[topic]
+    pub event_id: u64,
+    pub tier: String,
+    pub cap: Option<u64>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_zones` after the zone list is saved or cleared (issue #515).
+/// `zones` is empty when the restriction was removed.
+pub struct TierZonesSet {
+    #[topic]
+    pub event_id: u64,
+    pub tier: String,
+    pub zones: Vec<String>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted by `set_tier_perks` after the perk list is saved or cleared (issue #515).
+/// `perks` is empty when the perks were removed.
+pub struct TierPerksSet {
+    #[topic]
+    pub event_id: u64,
+    pub tier: String,
+    pub perks: Vec<String>,
 }
