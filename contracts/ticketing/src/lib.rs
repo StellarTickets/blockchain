@@ -1249,6 +1249,13 @@ impl TicketingContract {
             ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
+            // Issue #513: every owner change publishes TicketTransferred.
+            TicketTransferred {
+                ticket_id,
+                from: from.clone(),
+                to: to.clone(),
+            }
+            .publish(&env);
         }
         Ok(())
     }
@@ -1344,6 +1351,13 @@ impl TicketingContract {
         ticket.resale_price = 0;
         env.storage().persistent().remove(&key);
         Self::save_ticket(&env, ticket_id, &ticket);
+        // Issue #513: gift claims change ownership, so they publish TicketTransferred.
+        TicketTransferred {
+            ticket_id,
+            from: claim.from,
+            to: ticket.owner.clone(),
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -2196,6 +2210,13 @@ impl TicketingContract {
         if seller_amount > 0 {
             token_client.transfer(&buyer, &seller, &seller_amount);
         }
+        // Issue #513: resale purchases change ownership, so they publish TicketTransferred.
+        TicketTransferred {
+            ticket_id,
+            from: seller.clone(),
+            to: buyer.clone(),
+        }
+        .publish(&env);
         TicketResold {
             ticket_id,
             seller,
@@ -2631,6 +2652,13 @@ impl TicketingContract {
                 if seller_amount > 0 {
                     token_client.transfer(&contract, &seller, &seller_amount);
                 }
+                // Issue #513: the auction winner receives the ticket, so publish TicketTransferred.
+                TicketTransferred {
+                    ticket_id,
+                    from: seller.clone(),
+                    to: winner.clone(),
+                }
+                .publish(&env);
                 AuctionSettled {
                     ticket_id,
                     seller,
@@ -2813,6 +2841,13 @@ impl TicketingContract {
         if seller_amount > 0 {
             token_client.transfer(&contract, &owner, &seller_amount);
         }
+        // Issue #513: an accepted offer changes ownership, so publish TicketTransferred.
+        TicketTransferred {
+            ticket_id,
+            from: owner.clone(),
+            to: buyer.clone(),
+        }
+        .publish(&env);
         OfferAccepted {
             ticket_id,
             seller: owner,
