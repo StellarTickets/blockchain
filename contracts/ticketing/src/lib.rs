@@ -2301,7 +2301,6 @@ impl TicketingContract {
         // The sale price is captured before the ticket is overwritten, so the
         // published event carries the price the buyer actually paid.
         let price = ticket.resale_price;
-        let fee_config = Self::platform_fee_config(&env);
         let fee_bps = Self::get_platform_fee_bps(&env);
         let (royalty, platform_fee, seller_amount) = Self::resale_split(&event, price, fee_bps)?;
         let seller = ticket.owner.clone();
@@ -2342,6 +2341,7 @@ impl TicketingContract {
             buyer,
             price,
             royalty,
+            platform_fee,
         }
         .publish(&env);
         Ok(())
