@@ -18,7 +18,7 @@
 
 ## Ticket lifecycle states
 
-Every ticket transitions through a state machine with four possible states: `Valid`, `Used`, `Revoked`, and `Resale`. This section documents valid transitions and the semantics of each state.
+Every ticket transitions through a state machine with five possible states: `Valid`, `Used`, `Revoked`, `Resale`, and `Refunded`. This section documents valid transitions and the semantics of each state. The on-chain encoding of each status is listed in [`STORAGE_LAYOUT.md`](STORAGE_LAYOUT.md#ticket-status-codes) and [`CONTRACT_API.md`](CONTRACT_API.md#ticket-status-values).
 
 ### State definitions
 
@@ -43,6 +43,12 @@ Every ticket transitions through a state machine with four possible states: `Val
 - Cancel the listing (`cancel_resale`, return to `Valid`)
 - Keep the listing (no state change until buyer acts)
 - Cannot check in or transfer while in this state
+
+**`Refunded`** — The ticket was bought through `purchase_primary` and has been refunded through `refund_primary` within the event's refund window. This is a terminal state.
+- Cannot be transferred, listed, auctioned, checked in, revoked, or refunded again
+- Any state-changing operation fails with `AlreadyRefunded`
+- Read-only lookup via `get_ticket` and `verify_tickets` is still allowed
+- Integrators and off-chain decoders must accept status code `4`. Older decoders that only know `Valid`, `Used`, `Revoked` and `Resale` will fail on it
 
 When a buyer purchases a resale listing via `buy_resale`:
 1. The organizer's royalty is paid (in the payment token)
@@ -106,8 +112,10 @@ When a buyer purchases a resale listing via `buy_resale`:
 | `Valid` | `check_in(...)` | `Used` | `NotOrganizer` |
 | `Valid` | `revoke_ticket(...)` | `Revoked` | `NotOrganizer` |
 | `Valid` | `list_for_resale(...)` | `Resale` | `ResalePriceExceedsCap` |
+| `Valid` | `refund_primary(...)` | `Refunded` | `NotOwner` (transferred or not bought on-chain), `RefundWindowExpired` |
 | `Used` | *any state-changing op* | — | `AlreadyUsed` |
 | `Revoked` | *any state-changing op* | — | `Revoked` |
+| `Refunded` | *any state-changing op* | — | `AlreadyRefunded` |
 | `Resale` | `cancel_resale(...)` | `Valid` | `NotOwner` |
 | `Resale` | `buy_resale(...)` | `Valid` (new owner) | `NotOwner` (of payment token balance) |
 | `Resale` | `transfer_ticket(...)` | — | (blocked; must cancel first) |

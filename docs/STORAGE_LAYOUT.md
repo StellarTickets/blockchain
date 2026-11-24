@@ -59,6 +59,25 @@ An entry that is never touched again after its last extension survives
 | `OrganizerEvents(org)`          | `u32`                        | `create_event*`                                                               | never                                   |
 | `OrganizerEventAt(org, idx)`    | `u64`                        | `create_event*`                                                               | never                                   |
 
+### Ticket status codes
+
+The packed `StoredTicket` record stores its status as a `u64` code. The
+mapping is fixed by `status_code` and `status_from_code` in
+[`types.rs`](../contracts/ticketing/src/types.rs):
+
+| Code | `TicketStatus` | Terminal |
+| ---- | -------------- | -------- |
+| `0`  | `Valid`        | no       |
+| `1`  | `Used`         | yes      |
+| `2`  | `Revoked`      | yes      |
+| `3`  | `Resale`       | no       |
+| `4`  | `Refunded`     | yes      |
+
+Code `4` (`Refunded`, set by `refund_primary`) was added after the first
+release. Decoders must accept it. Any other code is rejected with
+`InvalidTicketLifecycle`. The transitions between these states are documented
+in [`GLOSSARY.md`](GLOSSARY.md#ticket-lifecycle-states).
+
 ### Ticket records
 
 | Key                     | Value type                   | Extended on                                        | Removed on                                               |

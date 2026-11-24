@@ -117,6 +117,23 @@ missing tickets return `TicketNotFound`, and calls before initialization return
 `NotInitialized`. Invalid stored lifecycle codes return `InvalidTicketLifecycle`.
 It requires no signature and does not change ticket data or storage TTL.
 
+## Ticket status values
+
+`get_ticket` and `verify_tickets` return a `TicketStatus` with five values.
+Integrators and off-chain decoders must handle all five, including `Refunded`:
+
+| Status     | Code | Terminal | Entered by                                  |
+| ---------- | ---- | -------- | ------------------------------------------- |
+| `Valid`    | `0`  | no       | issue, purchase, transfer, cancel of a listing |
+| `Used`     | `1`  | yes      | `check_in`, `check_in_batch`                |
+| `Revoked`  | `2`  | yes      | `revoke_ticket`, `revoke_with_refund`, `revoke_batch` |
+| `Resale`   | `3`  | no       | `list_for_resale`                           |
+| `Refunded` | `4`  | yes      | `refund_primary`                            |
+
+`Refunded` tickets reject every state-changing call with `AlreadyRefunded`.
+A decoder that only knows the first four statuses will fail on code `4`.
+The full transition table is in [`GLOSSARY.md`](GLOSSARY.md#ticket-lifecycle-states).
+
 The existing `is_valid(ticket_id, owner) -> bool` additionally checks ownership
 and returns `false` on lookup errors. Its signature is retained for deployed
 clients; the status-only query uses a distinct name to preserve that ABI.
