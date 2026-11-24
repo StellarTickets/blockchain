@@ -166,6 +166,51 @@ Emitted when a buyer cancels their offer (issue #106).
 | `buyer`     | `Address` | Address cancelling the offer |
 | `amount`    | `i128`    | Cancelled offer amount       |
 
+## `TierPriceSet`
+
+Emitted by `set_tier_price` after the price is saved (issue #514). A price of
+`0` marks the tier as free. Every change publishes, including changes made
+mid-sale, so the price history of a tier can be rebuilt from events.
+
+| Field      | Type     | Notes                                    |
+| ---------- | -------- | ---------------------------------------- |
+| `event_id` | `u64`    | topic                                    |
+| `tier`     | `String` | Tier label                               |
+| `price`    | `i128`   | New price, in the event's payment token  |
+
+## `TierCapacitySet`
+
+Emitted by `set_tier_capacity` after the cap is saved or removed (issue #515).
+
+| Field      | Type          | Notes                                       |
+| ---------- | ------------- | ------------------------------------------- |
+| `event_id` | `u64`         | topic                                       |
+| `tier`     | `String`      | Tier label                                  |
+| `cap`      | `Option<u64>` | New cap, or `None` when the cap was removed |
+
+## `TierZonesSet`
+
+Emitted by `set_tier_zones` after the zone list is saved or cleared (issue #515).
+
+| Field      | Type          | Notes                                               |
+| ---------- | ------------- | --------------------------------------------------- |
+| `event_id` | `u64`         | topic                                               |
+| `tier`     | `String`      | Tier label                                          |
+| `zones`    | `Vec<String>` | New zone list. Empty when the restriction was removed |
+
+## `TierPerksSet`
+
+Emitted by `set_tier_perks` after the perk list is saved or cleared (issue #515).
+
+| Field      | Type          | Notes                                           |
+| ---------- | ------------- | ----------------------------------------------- |
+| `event_id` | `u64`         | topic                                           |
+| `tier`     | `String`      | Tier label                                      |
+| `perks`    | `Vec<String>` | New perk list. Empty when the perks were removed |
+
+Rejected calls to the four setters above publish nothing. Indexers can mirror
+tier configuration from these events without polling the getters.
+
 ## Admin events
 
 | Event                     | Emitted by                                 | Fields                                                            |
