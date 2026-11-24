@@ -171,6 +171,9 @@ pub struct TicketRecipient {
     pub seat: String,
     /// Price paid at primary sale; used for resale caps and refunds.
     pub price: i128,
+    /// Optional metadata URI for this ticket, at most `MAX_METADATA_URI_LEN`
+    /// bytes (issue #508). `None` mints the ticket without one.
+    pub metadata_uri: Option<String>,
 }
 
 /// A ticket minted for an event.
@@ -370,6 +373,10 @@ pub enum DataKey {
     /// Optional metadata URI for a ticket, set at issuance (issue #109).
     /// Stored apart from `Ticket` so tickets without one pay no extra cost.
     TicketMetadataUri(u64),
+    /// Default metadata URI for one of an event's tiers, keyed by event id and
+    /// tier (issue #507). `purchase_primary` copies it onto each ticket it
+    /// sells in the tier. Absent means primary sales in the tier carry no URI.
+    TierMetadataUri(u64, String),
     /// Number of tickets an address owns, regardless of lifecycle status.
     /// Backs the SEP-50 `balance` read (issue #110).
     OwnerBalance(Address),

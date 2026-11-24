@@ -102,3 +102,110 @@ fn only_organizer_can_manage_signers() {
     );
     assert!(client.is_checkin_signer(&1, &gate));
 }
+
+// Issue #517: adding and removing a check-in signer publishes an event.
+
+use soroban_sdk::testutils::Events as _;
+use soroban_sdk::Event as _;
+
+fn added_count(
+    env: &Env,
+    client: &TicketingContractClient,
+    event_id: u64,
+    signer: &Address,
+) -> usize {
+    let expected = CheckInSignerAdded {
+        event_id,
+        signer: signer.clone(),
+    }
+    .to_xdr(env, &client.address);
+    env.events()
+        .all()
+        .events()
+        .iter()
+        .filter(|event| **event == expected)
+        .count()
+}
+
+fn removed_count(
+    env: &Env,
+    client: &TicketingContractClient,
+    event_id: u64,
+    signer: &Address,
+) -> usize {
+    let expected = CheckInSignerRemoved {
+        event_id,
+        signer: signer.clone(),
+    }
+    .to_xdr(env, &client.address);
+    env.events()
+        .all()
+        .events()
+        .iter()
+        .filter(|event| **event == expected)
+        .count()
+}
+
+#[test]
+fn adding_a_signer_publishes_checkin_signer_added() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let gate = Address::generate(&env);
+
+    client.add_checkin_signer(&organizer, &1, &gate);
+
+    assert_eq!(added_count(&env, &client, 1, &gate), 1);
+}
+
+#[test]
+fn removing_a_signer_publishes_checkin_signer_removed() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let gate = Address::generate(&env);
+    client.add_checkin_signer(&organizer, &1, &gate);
+
+    client.remove_checkin_signer(&organizer, &1, &gate);
+
+    // Count before any further call: `events().all()` covers the latest invocation.
+    assert_eq!(removed_count(&env, &client, 1, &gate), 1);
+    assert!(!client.is_checkin_signer(&1, &gate));
+}
+
+#[test]
+fn re_adding_a_listed_signer_publishes_nothing() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let gate = Address::generate(&env);
+    client.add_checkin_signer(&organizer, &1, &gate);
+
+    client.add_checkin_signer(&organizer, &1, &gate);
+
+    // The repeat call is the latest invocation, so it must carry no added event.
+    assert_eq!(added_count(&env, &client, 1, &gate), 0);
+    assert!(client.is_checkin_signer(&1, &gate));
+}
+
+#[test]
+fn removing_an_unlisted_signer_publishes_nothing() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let stranger = Address::generate(&env);
+
+    client.remove_checkin_signer(&organizer, &1, &stranger);
+
+    assert_eq!(removed_count(&env, &client, 1, &stranger), 0);
+}
+
+#[test]
+fn non_organizer_cannot_change_signers_or_publish() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let intruder = Address::generate(&env);
+    let gate = Address::generate(&env);
+
+    assert_eq!(
+        client.try_add_checkin_signer(&intruder, &1, &gate),
+        Err(Ok(Error::NotOrganizer))
+    );
+    assert_eq!(added_count(&env, &client, 1, &gate), 0);
+}

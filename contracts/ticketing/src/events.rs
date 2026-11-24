@@ -368,3 +368,25 @@ pub struct GiftClaimed {
     pub from: Address,
     pub recipient: Address,
 }
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when an organizer adds a delegated check-in signer (issue #517).
+/// Published only when the signer was not already on the list, so a repeated
+/// add emits nothing.
+pub struct CheckInSignerAdded {
+    #[topic]
+    pub event_id: u64,
+    pub signer: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when an organizer removes a delegated check-in signer (issue #517).
+/// Published only when the signer was on the list, so removing an unknown
+/// signer emits nothing.
+pub struct CheckInSignerRemoved {
+    #[topic]
+    pub event_id: u64,
+    pub signer: Address,
+}
