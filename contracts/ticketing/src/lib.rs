@@ -19,21 +19,12 @@ use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
 pub use events::{
     AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, ListingCancelled,
-    OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
-    PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
-    TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
     ContractInitialized, ContractUpgraded, EventCancelled, EventConfigChanged, EventCreated,
-    ListingCancelled, ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved,
-    OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
-    TicketResold, TicketTransferred,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, GiftClaimed,
-    GiftClaimCreated, ListingCancelled, OfferAccepted, OfferCancelled, OfferMade,
-    OrganizerApproved, OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed,
-    PlatformFeeUpdated, PrimarySale, PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued,
-    TicketListed, TicketRefunded, TicketResold, TicketTransferred,
+    GiftClaimCreated, GiftClaimed, ListingCancelled, ListingDelisted, OfferAccepted,
+    OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked, PaymentTokenChanged,
+    PaymentTokenProposed, PlatformFeeUpdated, PrimarySale, PurchaseThrottleUpdated,
+    TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded, TicketResold,
+    TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -1399,8 +1390,10 @@ impl TicketingContract {
         // Issue #513: gift claims change ownership, so they publish TicketTransferred.
         TicketTransferred {
             ticket_id,
-            from: claim.from,
+            from: claim.from.clone(),
             to: ticket.owner.clone(),
+        }
+        .publish(&env);
         GiftClaimed {
             ticket_id,
             from: claim.from,
