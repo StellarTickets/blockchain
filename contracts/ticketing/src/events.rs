@@ -280,6 +280,13 @@ pub struct TierPriceSet {
     pub tier: String,
     /// New price, in the event's payment token.
     pub price: i128,
+/// Emitted when a gift claim is created for a ticket (issue #325).
+/// Emitted by `create_gift_claim` after the claim is saved (issue #325).
+pub struct GiftClaimCreated {
+    #[topic]
+    pub ticket_id: u64,
+    pub from: Address,
+    pub expires_at: u64,
 }
 
 #[contractevent]
@@ -322,4 +329,11 @@ pub struct TierPerksSet {
     pub tier: String,
     /// New perk list, empty when the perks were removed.
     pub perks: Vec<String>,
+/// Emitted when a gift claim is successfully claimed (issue #325).
+/// Emitted by `claim_gift` after ownership transfers (issue #325).
+pub struct GiftClaimed {
+    #[topic]
+    pub ticket_id: u64,
+    pub from: Address,
+    pub recipient: Address,
 }
