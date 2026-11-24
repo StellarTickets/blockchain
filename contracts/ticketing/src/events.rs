@@ -273,9 +273,12 @@ pub struct TicketRefunded {
 /// Emitted by `set_tier_price` after the tier price is saved (issue #514).
 /// Lets buyers and the backend audit what was charged and when.
 pub struct TierPriceSet {
+    /// Event whose tier was priced (topic).
     #[topic]
     pub event_id: u64,
+    /// Tier label that was priced.
     pub tier: String,
+    /// New price, in the event's payment token.
     pub price: i128,
 }
 
@@ -284,9 +287,12 @@ pub struct TierPriceSet {
 /// Emitted by `set_tier_capacity` after the cap is saved or removed (issue #515).
 /// `cap` is `None` when the cap was removed.
 pub struct TierCapacitySet {
+    /// Event whose tier cap changed (topic).
     #[topic]
     pub event_id: u64,
+    /// Tier label whose cap changed.
     pub tier: String,
+    /// New cap, or `None` when the cap was removed.
     pub cap: Option<u64>,
 }
 
@@ -295,9 +301,12 @@ pub struct TierCapacitySet {
 /// Emitted by `set_tier_zones` after the zone list is saved or cleared (issue #515).
 /// `zones` is empty when the restriction was removed.
 pub struct TierZonesSet {
+    /// Event whose tier zones changed (topic).
     #[topic]
     pub event_id: u64,
+    /// Tier label whose zones changed.
     pub tier: String,
+    /// New zone list, empty when the restriction was removed.
     pub zones: Vec<String>,
 }
 
@@ -306,8 +315,11 @@ pub struct TierZonesSet {
 /// Emitted by `set_tier_perks` after the perk list is saved or cleared (issue #515).
 /// `perks` is empty when the perks were removed.
 pub struct TierPerksSet {
+    /// Event whose tier perks changed (topic).
     #[topic]
     pub event_id: u64,
+    /// Tier label whose perks changed.
     pub tier: String,
+    /// New perk list, empty when the perks were removed.
     pub perks: Vec<String>,
 }
