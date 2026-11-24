@@ -18,13 +18,13 @@ pub use constants::{
 use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
 pub use events::{
-    AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventConfigChanged, EventCreated,
-    GiftClaimCreated, GiftClaimed, ListingCancelled, ListingDelisted, OfferAccepted,
-    OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked, PaymentTokenChanged,
-    PaymentTokenProposed, PlatformFeeUpdated, PrimarySale, PurchaseThrottleUpdated,
-    TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded, TicketResold,
-    TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
+    AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced, CheckInSignerAdded,
+    CheckInSignerRemoved, ContractInitialized, ContractUpgraded, EventCancelled,
+    EventConfigChanged, EventCreated, GiftClaimCreated, GiftClaimed, ListingCancelled,
+    ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
+    PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
+    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
+    TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -1779,15 +1779,22 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_organizer(&env, event_id, &organizer)?;
-        let key = DataKey::CheckInSigner(event_id, signer);
+        let key = DataKey::CheckInSigner(event_id, signer.clone());
+        let already_listed = env.storage().persistent().has(&key);
         env.storage().persistent().set(&key, &true);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        // Issue #517: device key management must be auditable. Re-adding a
+        // signer that is already listed changes nothing, so it emits nothing.
+        if !already_listed {
+            CheckInSignerAdded { event_id, signer }.publish(&env);
+        }
         Ok(())
     }
 
-    /// Revokes a delegated check-in signer (issue #89).
+    /// Revokes a delegated check-in signer (issue #89). Removing a signer that
+    /// is not on the list succeeds and emits nothing (issue #517).
     pub fn remove_checkin_signer(
         env: Env,
         organizer: Address,
@@ -1797,9 +1804,12 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_organizer(&env, event_id, &organizer)?;
-        env.storage()
-            .persistent()
-            .remove(&DataKey::CheckInSigner(event_id, signer));
+        let key = DataKey::CheckInSigner(event_id, signer.clone());
+        if env.storage().persistent().has(&key) {
+            env.storage().persistent().remove(&key);
+            // Issue #517: publish the revocation so indexers can mirror it.
+            CheckInSignerRemoved { event_id, signer }.publish(&env);
+        }
         Ok(())
     }
 
