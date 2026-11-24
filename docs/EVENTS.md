@@ -101,6 +101,7 @@ Emitted by `buy_resale` after ownership and the royalty split are settled
 | `buyer`     | `Address` | Owner after the purchase                                  |
 | `price`     | `i128`    | Full resale price paid by the buyer                       |
 | `royalty`   | `i128`    | Part of `price` paid to the organizer (or royalty splits) |
+| `platform_fee` | `i128` | Resale platform fee paid to the admin (issue #503). The seller nets `price - royalty - platform_fee` |
 
 Resale purchases also publish `TicketResold`, so marketplace indexers do not
 need to derive the price or royalty from token transfers.

@@ -177,7 +177,8 @@ pub struct ListingCancelled {
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// Emitted by `buy_resale` after ownership and the royalty split are settled
-/// (issue #117).
+/// (issue #117). `platform_fee` is the resale platform fee paid to the admin
+/// (issue #503), so the seller's net proceeds are `price - royalty - platform_fee`.
 pub struct TicketResold {
     #[topic]
     pub ticket_id: u64,
@@ -185,6 +186,7 @@ pub struct TicketResold {
     pub buyer: Address,
     pub price: i128,
     pub royalty: i128,
+    pub platform_fee: i128,
 }
 
 #[contractevent]

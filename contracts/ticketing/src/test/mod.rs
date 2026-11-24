@@ -13,9 +13,12 @@ use soroban_sdk::{
     Address, Bytes, Env, IntoVal, String, Vec,
 };
 
+mod active_supply;
 mod admin_transfer;
 mod auth;
 mod auth_matrix;
+mod base_token_uri;
+mod batch_duplicates;
 mod batch_issuance;
 mod batch_transfer_events;
 mod budget;

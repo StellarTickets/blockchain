@@ -5,6 +5,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- `set_base_token_uri(admin, base_uri)` sets a base URI for `token_uri`.
+  Tickets without a per-ticket URI, such as `purchase_primary` tickets,
+  return `{base}/{token_id}` instead of `MetadataUriNotSet` (issue #506).
+- `active_supply(event_id)` returns an event's issued tickets minus refunded
+  and revoked ones. `tickets_issued` and tier capacity stay lifetime
+  counters (issue #511).
+- `DuplicateTicketInBatch` (99): `transfer_batch`, `check_in_batch` and
+  `revoke_batch` reject a batch that names the same ticket id twice
+  (issue #510).
+
 ### Fixed
 - Resolve a duplicate error discriminant: `ZoneNotAllowed` moves from `61`
   to `66`, since `61` was already `GiftClaimAlreadyExists`. The crate could

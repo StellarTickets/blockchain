@@ -25,6 +25,7 @@ pub use events::{
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
     PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
     TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
+    EventConfigChanged, ListingDelisted, GiftClaimed, GiftClaimCreated,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -1275,6 +1276,7 @@ impl TicketingContract {
         if from == to {
             return Err(Error::SelfTransfer);
         }
+        Self::ensure_no_duplicate_ids(&env, &ticket_ids)?;
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
             if ticket.owner != from {
@@ -1936,6 +1938,7 @@ impl TicketingContract {
         if ticket_ids.len() > MAX_BATCH_SIZE {
             return Err(Error::BatchTooLarge);
         }
+        Self::ensure_no_duplicate_ids(&env, &ticket_ids)?;
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
             let event = Self::require_check_in_authority(&env, ticket.event_id, &organizer)?;
@@ -1975,6 +1978,7 @@ impl TicketingContract {
         Self::require_organizer(&env, ticket.event_id, &organizer)?;
         Self::require_not_terminal(&ticket)?;
         ticket.status = TicketStatus::Revoked;
+        Self::retire_ticket(&env, ticket.event_id);
         // A revoked ticket must not keep a live resale asking price (issue
         // #129): `resale_price` is the marker a listing is read from, so
         // leaving it non-zero kept listing data attached to a dead ticket.
@@ -2082,6 +2086,7 @@ impl TicketingContract {
             .publish(&env);
         }
         ticket.status = TicketStatus::Revoked;
+        Self::retire_ticket(&env, ticket.event_id);
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
         Self::save_ticket(&env, ticket_id, &ticket);
@@ -2109,11 +2114,13 @@ impl TicketingContract {
         if ticket_ids.len() > MAX_BATCH_SIZE {
             return Err(Error::BatchTooLarge);
         }
+        Self::ensure_no_duplicate_ids(&env, &ticket_ids)?;
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
             Self::require_organizer(&env, ticket.event_id, &organizer)?;
             Self::require_not_terminal(&ticket)?;
             ticket.status = TicketStatus::Revoked;
+            Self::retire_ticket(&env, ticket.event_id);
             Self::remove_gift_claim(&env, ticket_id);
             Self::save_ticket(&env, ticket_id, &ticket);
         }
@@ -2398,7 +2405,6 @@ impl TicketingContract {
         // The sale price is captured before the ticket is overwritten, so the
         // published event carries the price the buyer actually paid.
         let price = ticket.resale_price;
-        let fee_config = Self::platform_fee_config(&env);
         let fee_bps = Self::get_platform_fee_bps(&env);
         let (royalty, platform_fee, seller_amount) = Self::resale_split(&event, price, fee_bps)?;
         let seller = ticket.owner.clone();
@@ -2439,6 +2445,7 @@ impl TicketingContract {
             buyer,
             price,
             royalty,
+            platform_fee,
         }
         .publish(&env);
         Ok(())
@@ -2665,18 +2672,56 @@ impl TicketingContract {
     }
 
     /// SEP-50 `token_uri`: the metadata URI set when the ticket was issued
-    /// (issues #109 and #110).
+    /// (issues #109 and #110). A ticket issued without a URI, such as one from
+    /// `purchase_primary`, falls back to `{base}/{token_id}` when the admin has
+    /// set a base URI with `set_base_token_uri` (issue #506).
     ///
     /// # Errors
     ///
     /// Returns `Error::TicketNotFound` when no ticket with `token_id` exists,
-    /// and `Error::MetadataUriNotSet` when it was issued without a URI.
+    /// and `Error::MetadataUriNotSet` when there is neither a per-ticket URI
+    /// nor a base URI.
     pub fn token_uri(env: Env, token_id: u64) -> Result<String, Error> {
         Self::get_ticket(env.clone(), token_id)?;
-        env.storage()
+        if let Some(uri) = env
+            .storage()
             .persistent()
-            .get(&DataKey::TicketMetadataUri(token_id))
-            .ok_or(Error::MetadataUriNotSet)
+            .get::<_, String>(&DataKey::TicketMetadataUri(token_id))
+        {
+            return Ok(uri);
+        }
+        let base: String = env
+            .storage()
+            .instance()
+            .get(&DataKey::BaseTokenUri)
+            .ok_or(Error::MetadataUriNotSet)?;
+        Self::join_base_uri(&env, &base, token_id)
+    }
+
+    /// Sets or clears the base URI behind the `token_uri` fallback (issue #506).
+    /// Pass `None` to clear it, after which tickets without a per-ticket URI
+    /// report `MetadataUriNotSet` again. Changes apply to every event at once.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotAdmin` when the caller is not the admin. Returns
+    /// `Error::EmptyNameOrCategory` for an empty base URI and `Error::StringTooLong`
+    /// when it exceeds `MAX_METADATA_URI_LEN`, leaving the stored value unchanged.
+    pub fn set_base_token_uri(
+        env: Env,
+        admin: Address,
+        base_uri: Option<String>,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        match base_uri {
+            Some(uri) => {
+                Self::validate_label(&uri, MAX_METADATA_URI_LEN)?;
+                env.storage().instance().set(&DataKey::BaseTokenUri, &uri);
+            }
+            None => env.storage().instance().remove(&DataKey::BaseTokenUri),
+        }
+        Ok(())
     }
 
     /// Sets the collection `name` and `symbol` that SEP-50 wallets display
@@ -2736,6 +2781,27 @@ impl TicketingContract {
             .instance()
             .get(&DataKey::CollectionSymbol)
             .ok_or(Error::CollectionMetadataNotSet)
+    }
+
+    /// Tickets an event has issued that are still in circulation (issue #511).
+    ///
+    /// This is `Event.tickets_issued` minus the tickets refunded or revoked
+    /// since issuance. Tickets that are used at the gate still count, since they
+    /// were sold and attended. `tickets_issued` and tier capacity remain lifetime
+    /// counters, so a refunded seat is not sold again.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::EventNotFound` when the event does not exist.
+    pub fn active_supply(env: Env, event_id: u64) -> Result<u64, Error> {
+        Self::extend_instance_ttl(&env);
+        let event = Self::get_event_inner(&env, event_id)?;
+        let retired: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RetiredTickets(event_id))
+            .unwrap_or(0);
+        Ok(event.tickets_issued.saturating_sub(retired))
     }
 
     /// Starts a timed auction for an owned, valid ticket (issue #105). Bids are
@@ -3598,6 +3664,58 @@ impl TicketingContract {
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
     }
 
+    /// Builds `{base}/{token_id}` for the `token_uri` fallback (issue #506).
+    /// Soroban strings cannot be concatenated, so the bytes are assembled in a
+    /// fixed buffer. The result is bounded by `MAX_METADATA_URI_LEN`.
+    fn join_base_uri(env: &Env, base: &String, token_id: u64) -> Result<String, Error> {
+        let mut digits = [0u8; 20];
+        let mut start = digits.len();
+        let mut remaining = token_id;
+        loop {
+            start -= 1;
+            digits[start] = b'0' + (remaining % 10) as u8;
+            remaining /= 10;
+            if remaining == 0 {
+                break;
+            }
+        }
+        let base_len = base.len() as usize;
+        let id_len = digits.len() - start;
+        let total = base_len + 1 + id_len;
+        if total > MAX_METADATA_URI_LEN as usize {
+            return Err(Error::StringTooLong);
+        }
+        let mut buf = [0u8; MAX_METADATA_URI_LEN as usize];
+        base.copy_into_slice(&mut buf[..base_len]);
+        buf[base_len] = b'/';
+        buf[base_len + 1..total].copy_from_slice(&digits[start..]);
+        Ok(String::from_bytes(env, &buf[..total]))
+    }
+
+    /// Rejects a batch that names the same ticket id twice (issue #510). Without
+    /// this check the second occurrence sees the state the first one left behind
+    /// and fails with a misleading `NotOwner`, `AlreadyUsed` or `Revoked`.
+    fn ensure_no_duplicate_ids(env: &Env, ticket_ids: &Vec<u64>) -> Result<(), Error> {
+        let mut seen: Map<u64, bool> = Map::new(env);
+        for ticket_id in ticket_ids.iter() {
+            if seen.contains_key(ticket_id) {
+                return Err(Error::DuplicateTicketInBatch);
+            }
+            seen.set(ticket_id, true);
+        }
+        Ok(())
+    }
+
+    /// Counts one ticket of an event as out of circulation (issue #511). Called
+    /// once per ticket when it moves to `Refunded` or `Revoked`, which are
+    /// terminal, so a ticket is never counted twice.
+    fn retire_ticket(env: &Env, event_id: u64) {
+        let key = DataKey::RetiredTickets(event_id);
+        let retired: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(retired + 1));
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
     /// Reads a tier's default metadata URI for a primary sale (issue #507).
     /// Refreshes the entry's TTL when it is set, so a tier that keeps selling
     /// does not lose its URI to archival.
@@ -4390,6 +4508,7 @@ impl TicketingContract {
             return Err(Error::RefundWindowExpired);
         }
         ticket.status = TicketStatus::Refunded;
+        Self::retire_ticket(&env, ticket.event_id);
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
         Self::save_ticket(&env, ticket_id, &ticket);

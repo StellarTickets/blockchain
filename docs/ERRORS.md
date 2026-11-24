@@ -122,6 +122,7 @@ diagnostic transaction.
 | 98   | `NotPendingAdmin`           | `accept_admin` was called by an address that is not the nominee in the pending admin transfer (issue #100)                                                                            |
 | 99   | `CollectionMetadataNotSet`  | `name` or `symbol` was read before the admin set them with `set_collection_metadata` (issue #505)                                                                                     |
 | 100  | `InvalidCollectionMetadata` | `set_collection_metadata` got an empty or over-long `name` or `symbol` (issue #505)                                                                                                   |
+| 101  | `DuplicateTicketInBatch`    | `transfer_batch`, `check_in_batch` or `revoke_batch` was given the same ticket id more than once (issue #510)                                                                         |
 
 ### Grouping
 
