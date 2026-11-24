@@ -370,6 +370,10 @@ pub enum DataKey {
     /// Optional metadata URI for a ticket, set at issuance (issue #109).
     /// Stored apart from `Ticket` so tickets without one pay no extra cost.
     TicketMetadataUri(u64),
+    /// Default metadata URI for one of an event's tiers, keyed by event id and
+    /// tier (issue #507). `purchase_primary` copies it onto each ticket it
+    /// sells in the tier. Absent means primary sales in the tier carry no URI.
+    TierMetadataUri(u64, String),
     /// Number of tickets an address owns, regardless of lifecycle status.
     /// Backs the SEP-50 `balance` read (issue #110).
     OwnerBalance(Address),

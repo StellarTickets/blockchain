@@ -1033,7 +1033,13 @@ impl TicketingContract {
                 token_client.transfer(&buyer, &event.organizer, &proceeds);
             }
         }
+        // Issue #507: a primary-sale ticket takes its tier's default metadata
+        // URI, so it resolves through `token_uri` like an issued ticket does.
+        let tier_uri = Self::tier_metadata_uri_inner(&env, event_id, &tier);
         let ticket_id = Self::mint(&env, event_id, buyer.clone(), tier, seat, price);
+        if let Some(uri) = &tier_uri {
+            Self::store_metadata_uri(&env, ticket_id, uri);
+        }
         // Mark this ticket as acquired through on-chain primary sale (issue #439).
         // Only tickets with this marker can be refunded on-chain.
         let key = DataKey::PrimarySaleTicket(ticket_id);
@@ -1587,6 +1593,50 @@ impl TicketingContract {
             .persistent()
             .get(&DataKey::TierPerks(event_id, tier))
             .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Sets or clears the default metadata URI for one of an event's tiers
+    /// (issue #507). `purchase_primary` gives every ticket it sells in the tier
+    /// this URI, so primary-sale tickets resolve through `token_uri`. Passing
+    /// `None` clears it. Tickets already sold keep the URI they were minted
+    /// with.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::EmptyNameOrCategory` for an empty URI, `Error::StringTooLong`
+    /// for a URI above `MAX_METADATA_URI_LEN`, and `Error::NotOrganizer` for a
+    /// caller who does not run the event.
+    pub fn set_tier_metadata_uri(
+        env: Env,
+        organizer: Address,
+        event_id: u64,
+        tier: String,
+        uri: Option<String>,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        organizer.require_auth();
+        Self::require_organizer(&env, event_id, &organizer)?;
+        Self::validate_label(&tier, MAX_TICKET_LABEL_LEN)?;
+        let key = DataKey::TierMetadataUri(event_id, tier);
+        match uri {
+            Some(uri) => {
+                Self::validate_label(&uri, MAX_METADATA_URI_LEN)?;
+                env.storage().persistent().set(&key, &uri);
+                env.storage()
+                    .persistent()
+                    .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+            }
+            None => env.storage().persistent().remove(&key),
+        }
+        Ok(())
+    }
+
+    /// The default metadata URI for one of an event's tiers, or `None` when
+    /// the tier has none (issue #507).
+    pub fn tier_metadata_uri(env: Env, event_id: u64, tier: String) -> Option<String> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TierMetadataUri(event_id, tier))
     }
 
     /// Sets one custom metadata entry on an event, e.g. `("venue", "O2
@@ -3489,6 +3539,20 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Reads a tier's default metadata URI for a primary sale (issue #507).
+    /// Refreshes the entry's TTL when it is set, so a tier that keeps selling
+    /// does not lose its URI to archival.
+    fn tier_metadata_uri_inner(env: &Env, event_id: u64, tier: &String) -> Option<String> {
+        let key = DataKey::TierMetadataUri(event_id, tier.clone());
+        let uri: Option<String> = env.storage().persistent().get(&key);
+        if uri.is_some() {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        }
+        uri
     }
 
     /// Stores a ticket's metadata URI under its own key (issue #109).
