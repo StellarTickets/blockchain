@@ -12,8 +12,8 @@ pub use constants::{
     BPS_DENOMINATOR, CATEGORY_CONCERT, CATEGORY_CONFERENCE, CATEGORY_FESTIVAL, CATEGORY_FLIGHT,
     CATEGORY_OTHER, CATEGORY_SPORTS, MAX_BATCH_SIZE, MAX_CATEGORY_LEN, MAX_EVENT_METADATA_ENTRIES,
     MAX_EVENT_METADATA_KEY_LEN, MAX_EVENT_METADATA_VALUE_LEN, MAX_METADATA_URI_LEN, MAX_NAME_LEN,
-    MAX_OWNER_HISTORY, MAX_PAGE_SIZE, MAX_PERK_LEN, MAX_TICKET_LABEL_LEN, MAX_TIER_PERKS,
-    MAX_TIER_ZONES, PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS, USED_TICKET_RETENTION_SECONDS,
+    MAX_OWNER_HISTORY, MAX_PAGE_SIZE, MAX_PERK_LEN, MAX_ROYALTY_SPLITS, MAX_TICKET_LABEL_LEN,
+    MAX_TIER_PERKS, MAX_TIER_ZONES, PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS, USED_TICKET_RETENTION_SECONDS,
 };
 use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
@@ -550,8 +550,22 @@ impl TicketingContract {
             if entries.is_empty() {
                 return Err(Error::InvalidRoyalty);
             }
+            // Issue #459: Enforce upper bound on split count to prevent budget exhaustion
+            if entries.len() > MAX_ROYALTY_SPLITS {
+                return Err(Error::InvalidRoyalty);
+            }
             let mut total: u64 = 0;
-            for (_, bps) in entries.iter() {
+            let mut seen_recipients = soroban_sdk::Map::<Address, ()>::new(&env);
+            for (recipient, bps) in entries.iter() {
+                // Issue #459: Reject zero-bps entries
+                if bps == 0 {
+                    return Err(Error::InvalidRoyalty);
+                }
+                // Issue #459: Reject duplicate recipients
+                if seen_recipients.contains_key(recipient.clone()) {
+                    return Err(Error::InvalidRoyalty);
+                }
+                seen_recipients.set(recipient.clone(), ());
                 total += bps as u64;
             }
             if total != event.royalty_bps as u64 {
