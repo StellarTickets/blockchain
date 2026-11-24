@@ -16,6 +16,7 @@ use soroban_sdk::{
 mod admin_transfer;
 mod auth;
 mod auth_matrix;
+mod base_token_uri;
 mod batch_duplicates;
 mod batch_issuance;
 mod batch_transfer_events;
