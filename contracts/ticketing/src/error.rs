@@ -337,4 +337,10 @@ pub enum Error {
     NoPendingAdmin = 97,
     /// The caller is not the nominee in the pending admin transfer (issue #100).
     NotPendingAdmin = 98,
+    // Collection metadata (SEP-50 name and symbol)
+    // ------------------------------------------------------------------
+    /// The admin has not set the collection `name` or `symbol` yet (issue #505).
+    CollectionMetadataNotSet = 99,
+    /// The collection name or symbol is empty or longer than its maximum (issue #505).
+    InvalidCollectionMetadata = 100,
 }

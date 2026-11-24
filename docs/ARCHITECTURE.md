@@ -105,7 +105,7 @@ Every state-changing function calls `require_auth()` on the account that must ha
 | **Event organizer** (per `Event.organizer`) | `create_event*`, `issue_ticket`, `enable_escrow`, `set_event_payment_token`, `check_in*`, `revoke_ticket*`, `set_seat`, `revoke_batch` | Full control over **their own events only** |
 | **Ticket owner** (per `Ticket.owner`) | `transfer_ticket`, `transfer_batch`, `create_gift_claim`, `list_for_resale`, `cancel_resale` | Only while ticket is `Valid` or `Resale` |
 | **Buyer** (any address) | `purchase_primary`, `buy_resale`, `claim_gift` | Pays and receives ownership atomically |
-| **Anyone** (read-only) | `get_event`, `get_ticket`, `verify_tickets`, `is_ticket_valid`, `is_valid`, `event_payment_token`, `token_decimals`, `get_organizer_events` | No auth required |
+| **Anyone** (read-only) | `get_event`, `get_ticket`, `verify_tickets`, `is_ticket_valid`, `is_valid`, `event_payment_token`, `token_decimals`, `organizer_event_count`, `get_organizer_events` (deprecated alias) | No auth required |
 
 ### Authorization ordering (critical)
 

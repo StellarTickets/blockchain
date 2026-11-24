@@ -33,7 +33,7 @@ a single per-ticket operator approval and `transfer_from` exist, but
 | `get_approved(token_id) -> Option<Address>` | Implemented | `get_approved(ticket_id)` | Returns `None` when no operator is approved. |
 | `approve_for_all`, `is_approved_for_all` | Not implemented | — | Approvals are per ticket only. |
 | `revoke_approval(owner, ticket_id)` | Extension, not in SEP-50 | `revoke_approval(owner, ticket_id)` | Clears the operator for one ticket. Idempotent. |
-| `name()`, `symbol()` | Not implemented | — | The contract hosts many events, so there is no single collection name or symbol. Open question for maintainers. |
+| `name()`, `symbol()` | Implemented | `name()`, `symbol()` | One collection name and symbol for the whole contract, set by the admin with `set_collection_metadata` (issue #505). Reads fail with `CollectionMetadataNotSet` until the admin sets them. |
 
 ## Events
 
@@ -63,7 +63,5 @@ indexers. The read functions above still give the current owner.
 ## Recommended follow-up
 
 1. Emit a SEP-50 `transfer` event from every path that changes an owner.
-2. Decide whether `name` and `symbol` belong on a per-event basis or are
-   omitted.
-3. Decide whether to add `live_until_ledger` expiry and `approve_for_all` to
+2. Decide whether to add `live_until_ledger` expiry and `approve_for_all` to
    the approval model, or keep it to one operator per ticket.
