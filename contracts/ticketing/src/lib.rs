@@ -24,16 +24,7 @@ pub use events::{
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
     PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
     TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventConfigChanged, EventCreated,
-    ListingCancelled, ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved,
-    OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
-    TicketResold, TicketTransferred,
-    ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, GiftClaimed,
-    GiftClaimCreated, ListingCancelled, OfferAccepted, OfferCancelled, OfferMade,
-    OrganizerApproved, OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed,
-    PlatformFeeUpdated, PrimarySale, PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued,
-    TicketListed, TicketRefunded, TicketResold, TicketTransferred,
+    EventConfigChanged, ListingDelisted, GiftClaimed, GiftClaimCreated,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -1400,8 +1391,10 @@ impl TicketingContract {
         // Issue #513: gift claims change ownership, so they publish TicketTransferred.
         TicketTransferred {
             ticket_id,
-            from: claim.from,
+            from: claim.from.clone(),
             to: ticket.owner.clone(),
+        }
+        .publish(&env);
         GiftClaimed {
             ticket_id,
             from: claim.from,
