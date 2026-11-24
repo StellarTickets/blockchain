@@ -23,7 +23,7 @@ pub use events::{
     OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
     PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
-    TicketResold, TicketTransferred,
+    TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -875,11 +875,18 @@ impl TicketingContract {
             return Err(Error::InvalidPrice);
         }
         Self::require_organizer(&env, event_id, &organizer)?;
-        let key = DataKey::TierPrice(event_id, tier);
+        let key = DataKey::TierPrice(event_id, tier.clone());
         env.storage().persistent().set(&key, &price);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        // Issue #514: price changes must be auditable, so publish each one.
+        TierPriceSet {
+            event_id,
+            tier,
+            price,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -923,6 +930,13 @@ impl TicketingContract {
             }
             None => env.storage().persistent().remove(&key),
         }
+        // Issue #515: publish every capacity change, including removal (`cap: None`).
+        TierCapacitySet {
+            event_id,
+            tier,
+            cap,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -1468,7 +1482,7 @@ impl TicketingContract {
                 return Err(Error::InvalidZones);
             }
         }
-        let key = DataKey::TierZones(event_id, tier);
+        let key = DataKey::TierZones(event_id, tier.clone());
         if zones.is_empty() {
             env.storage().persistent().remove(&key);
         } else {
@@ -1477,6 +1491,13 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        // Issue #515: publish every zone change, including a cleared list.
+        TierZonesSet {
+            event_id,
+            tier,
+            zones,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -1513,7 +1534,7 @@ impl TicketingContract {
                 return Err(Error::InvalidPerks);
             }
         }
-        let key = DataKey::TierPerks(event_id, tier);
+        let key = DataKey::TierPerks(event_id, tier.clone());
         if perks.is_empty() {
             env.storage().persistent().remove(&key);
         } else {
@@ -1522,6 +1543,13 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        // Issue #515: publish every perk change, including a cleared list.
+        TierPerksSet {
+            event_id,
+            tier,
+            perks,
+        }
+        .publish(&env);
         Ok(())
     }
 
