@@ -120,6 +120,8 @@ diagnostic transaction.
 | 96   | `EventMetadataFull`         | `set_event_metadata` would add a key to an event that already holds `MAX_EVENT_METADATA_ENTRIES` entries (issue #70)                                                                  |
 | 97   | `NoPendingAdmin`            | `accept_admin` was called when no admin transfer is pending (issue #100)                                                                                                              |
 | 98   | `NotPendingAdmin`           | `accept_admin` was called by an address that is not the nominee in the pending admin transfer (issue #100)                                                                            |
+| 99   | `CollectionMetadataNotSet`  | `name` or `symbol` was read before the admin set them with `set_collection_metadata` (issue #505)                                                                                     |
+| 100  | `InvalidCollectionMetadata` | `set_collection_metadata` got an empty or over-long `name` or `symbol` (issue #505)                                                                                                   |
 
 ### Grouping
 

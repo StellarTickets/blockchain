@@ -452,6 +452,11 @@ pub enum DataKey {
     /// Only tickets with this marker set can be refunded on-chain via
     /// `refund_primary`. Absent for tickets issued off-chain or as comps.
     PrimarySaleTicket(u64),
+    /// Collection name returned by SEP-50 `name`, set by the admin (issue #505).
+    /// Instance storage, so it shares the contract's TTL.
+    CollectionName,
+    /// Collection symbol returned by SEP-50 `symbol`, set by the admin (issue #505).
+    CollectionSymbol,
 }
 
 // Keep the persistent encoding beside the public and stored ticket types.

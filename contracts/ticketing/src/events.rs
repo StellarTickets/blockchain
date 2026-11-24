@@ -1,6 +1,6 @@
 //! Contract events emitted by the ticketing contract.
 
-use soroban_sdk::{contractevent, Address, BytesN, String};
+use soroban_sdk::{contractevent, Address, BytesN, String, Symbol};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -270,6 +270,13 @@ pub struct TicketRefunded {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when an organizer changes one event setting (issue #516). `field`
+/// names the setting that changed, e.g. `capacity` or `royalty_splits`, so
+/// indexers can mirror the event config without re-reading the event.
+pub struct EventConfigChanged {
+    #[topic]
+    pub event_id: u64,
+    pub field: Symbol,
 /// Emitted when a gift claim is created for a ticket (issue #325).
 /// Emitted by `create_gift_claim` after the claim is saved (issue #325).
 pub struct GiftClaimCreated {
@@ -281,6 +288,12 @@ pub struct GiftClaimCreated {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when an organizer delists a ticket without revoking it (issue
+/// #518). The ticket returns to `Valid` under its current owner.
+pub struct ListingDelisted {
+    #[topic]
+    pub ticket_id: u64,
+    pub organizer: Address,
 /// Emitted when a gift claim is successfully claimed (issue #325).
 /// Emitted by `claim_gift` after ownership transfers (issue #325).
 pub struct GiftClaimed {

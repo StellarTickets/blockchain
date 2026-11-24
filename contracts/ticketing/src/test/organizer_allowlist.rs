@@ -41,7 +41,7 @@ fn unapproved_address_cannot_squat_an_event_id() {
     let result = try_create(&env, &client, &squatter, 42);
     assert_eq!(result, Err(Ok(Error::OrganizerNotApproved)));
     assert_eq!(client.try_get_event(&42), Err(Ok(Error::EventNotFound)));
-    assert_eq!(client.get_organizer_events(&squatter), 0);
+    assert_eq!(client.organizer_event_count(&squatter), 0);
 
     // The id is still free for the legitimate, approved organizer.
     make_event(&env, &client, &organizer, 42);

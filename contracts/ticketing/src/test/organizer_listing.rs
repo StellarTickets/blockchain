@@ -1,6 +1,6 @@
 //! Paginated organizer event listing (Issue #112).
 //!
-//! `get_organizer_events` only counts an organizer's events. The paginated
+//! `organizer_event_count` only counts an organizer's events. The paginated
 //! `list_organizer_events` returns their ids a page at a time, so a frontend
 //! can enumerate them without knowing the ids in advance.
 
@@ -106,7 +106,7 @@ fn count_and_list_agree() {
     make_event(&env, &client, &organizer, 5);
     make_event(&env, &client, &organizer, 6);
 
-    assert_eq!(client.get_organizer_events(&organizer), 2);
+    assert_eq!(client.organizer_event_count(&organizer), 2);
     assert_eq!(
         client
             .list_organizer_events(&organizer, &0, &u32::MAX)

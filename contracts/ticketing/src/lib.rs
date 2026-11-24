@@ -15,10 +15,15 @@ pub use constants::{
     MAX_OWNER_HISTORY, MAX_PAGE_SIZE, MAX_PERK_LEN, MAX_TICKET_LABEL_LEN, MAX_TIER_PERKS,
     MAX_TIER_ZONES, PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS, USED_TICKET_RETENTION_SECONDS,
 };
-use constants::{LEDGER_BUMP, LEDGER_THRESHOLD};
+use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
 pub use events::{
     AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced,
+    ContractInitialized, ContractUpgraded, EventCancelled, EventConfigChanged, EventCreated,
+    ListingCancelled, ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved,
+    OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
+    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
+    TicketResold, TicketTransferred,
     ContractInitialized, ContractUpgraded, EventCancelled, EventCreated, GiftClaimed,
     GiftClaimCreated, ListingCancelled, OfferAccepted, OfferCancelled, OfferMade,
     OrganizerApproved, OrganizerRevoked, PaymentTokenChanged, PaymentTokenProposed,
@@ -30,7 +35,9 @@ pub use types::{
     PlatformFee, StoredTicket, Ticket, TicketRecipient, TicketStatus,
 };
 
-use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, Map, String, Vec};
+use soroban_sdk::{
+    contract, contractimpl, token, Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
+};
 
 /// # Authorization ordering (issue #206)
 ///
@@ -464,6 +471,7 @@ impl TicketingContract {
         }
         event.payment_token = token;
         Self::save_event(&env, event_id, &event);
+        Self::publish_config_changed(&env, event_id, "payment_token");
         Ok(())
     }
 
@@ -495,6 +503,7 @@ impl TicketingContract {
         }
         event.transferable = transferable;
         Self::save_event(&env, event_id, &event);
+        Self::publish_config_changed(&env, event_id, "transferable");
         Ok(())
     }
 
@@ -554,6 +563,7 @@ impl TicketingContract {
         }
         event.royalty_splits = splits;
         Self::save_event(&env, event_id, &event);
+        Self::publish_config_changed(&env, event_id, "royalty_splits");
         Ok(())
     }
 
@@ -576,6 +586,7 @@ impl TicketingContract {
         }
         event.max_tickets = max_tickets;
         Self::save_event(&env, event_id, &event);
+        Self::publish_config_changed(&env, event_id, "capacity");
         Ok(())
     }
 
@@ -601,6 +612,7 @@ impl TicketingContract {
         event.check_in_opens_seconds = check_in_opens_seconds;
         event.ends_at = ends_at;
         Self::save_event(&env, event_id, &event);
+        Self::publish_config_changed(&env, event_id, "check_in_window");
         Ok(())
     }
 
@@ -623,6 +635,7 @@ impl TicketingContract {
         }
         event.ticket_expires_at = expires_at;
         Self::save_event(&env, event_id, &event);
+        Self::publish_config_changed(&env, event_id, "ticket_expiry");
         Ok(())
     }
 
@@ -639,6 +652,7 @@ impl TicketingContract {
         let mut event = Self::require_organizer(&env, event_id, &organizer)?;
         event.max_reentries = max_reentries;
         Self::save_event(&env, event_id, &event);
+        Self::publish_config_changed(&env, event_id, "max_reentries");
         Ok(())
     }
 
@@ -998,9 +1012,10 @@ impl TicketingContract {
                     .instance()
                     .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
                     .unwrap_or(0);
-                env.storage()
-                    .instance()
-                    .set(&DataKey::OutstandingEscrow(token_address), &(current_escrow + proceeds));
+                env.storage().instance().set(
+                    &DataKey::OutstandingEscrow(token_address),
+                    &(current_escrow + proceeds),
+                );
                 env.storage()
                     .persistent()
                     .set(&DataKey::Event(event_id), &event);
@@ -1064,11 +1079,11 @@ impl TicketingContract {
                 .instance()
                 .get::<_, i128>(&DataKey::OutstandingEscrow(token_address.clone()))
                 .unwrap_or(0);
-            env.storage()
-                .instance()
-                .set(&DataKey::OutstandingEscrow(token_address.clone()), &(current_escrow - amount));
-            let token_client =
-                token::Client::new(&env, &token_address);
+            env.storage().instance().set(
+                &DataKey::OutstandingEscrow(token_address.clone()),
+                &(current_escrow - amount),
+            );
+            let token_client = token::Client::new(&env, &token_address);
             token_client.transfer(&env.current_contract_address(), &organizer, &amount);
         }
         Ok(())
@@ -1152,12 +1167,12 @@ impl TicketingContract {
         if fee_bps > BPS_DENOMINATOR {
             return Err(Error::InvalidPlatformFee);
         }
-        
+
         // Get existing config or create new one
         let existing = Self::platform_fee_config(&env);
         let resale_bps = existing.as_ref().map_or(0, |f| f.resale_bps);
         let recipient = existing.map_or(admin.clone(), |f| f.recipient);
-        
+
         // Store unified config
         env.storage().instance().set(
             &DataKey::PlatformFee,
@@ -1167,12 +1182,12 @@ impl TicketingContract {
                 recipient: recipient.clone(),
             },
         );
-        
+
         // Remove old key if present
         if env.storage().instance().has(&DataKey::PlatformFeeBps) {
             env.storage().instance().remove(&DataKey::PlatformFeeBps);
         }
-        
+
         PlatformFeeUpdated {
             admin: admin.clone(),
             fee_bps,
@@ -1696,6 +1711,7 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        Self::publish_config_changed(&env, event_id, "sale_window");
         Ok(())
     }
 
@@ -1878,12 +1894,16 @@ impl TicketingContract {
             // Calculate what was actually escrowed (original_price minus platform fee)
             let fee = Self::platform_fee_on(&env, ticket.original_price)?;
             let escrowed_amount = ticket.original_price - fee;
-            
+
             let refund_amount = ticket.original_price;
             let token_address = Self::payment_token_for_event(&env, &event)?;
             let refund_source = if event.escrow_enabled && event.escrow_balance >= escrowed_amount {
                 // Refund from escrow (which only holds price - fee) plus clawback the fee from admin
-                token_client.transfer(&env.current_contract_address(), &ticket.owner, &escrowed_amount);
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &ticket.owner,
+                    &escrowed_amount,
+                );
                 if fee > 0 {
                     let admin: Address = env
                         .storage()
@@ -1912,7 +1932,7 @@ impl TicketingContract {
             // The refunded ticket no longer counts against the owner's
             // `max_per_wallet` allowance.
             Self::decrement_wallet_purchase_count(&env, ticket.event_id, &ticket.owner);
-            
+
             // Emit refund event (issue #493)
             TicketRefunded {
                 ticket_id,
@@ -2119,6 +2139,54 @@ impl TicketingContract {
         ticket.resale_price = 0;
         Self::save_ticket(&env, ticket_id, &ticket);
         ListingCancelled { ticket_id, owner }.publish(&env);
+        Ok(())
+    }
+
+    /// Removes a ticket's resale listing on the organizer's authority, returning
+    /// the ticket to `Valid` under its current owner (issue #518). The ticket
+    /// itself is not revoked, so the holder keeps it. Use this to pull a
+    /// listing that is fraudulent or sits on a ticket whose transfer rights were
+    /// withdrawn, without voiding the ticket.
+    ///
+    /// Unlike `cancel_resale`, this ignores the resale cutoff and works on
+    /// cancelled events, because an organizer must be able to pull a bad listing
+    /// at any time. An auction that already has bids is binding, so it cannot
+    /// be delisted, the same as for the owner.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotOrganizer` if the caller is not the ticket's event
+    /// organizer. Returns `Error::NotForResale` if the ticket is not currently
+    /// listed. Returns `Error::AuctionHasBids` if a running auction has bids.
+    pub fn organizer_delist(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        organizer.require_auth();
+        Self::require_not_paused(&env)?;
+        let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
+        Self::require_organizer(&env, ticket.event_id, &organizer)?;
+        if ticket.status != TicketStatus::Resale {
+            return Err(Error::NotForResale);
+        }
+        if let Some(auction) = env
+            .storage()
+            .persistent()
+            .get::<_, Auction>(&DataKey::Auction(ticket_id))
+        {
+            if auction.highest_bidder.is_some() {
+                return Err(Error::AuctionHasBids);
+            }
+            env.storage()
+                .persistent()
+                .remove(&DataKey::Auction(ticket_id));
+        }
+        ticket.status = TicketStatus::Valid;
+        ticket.resale_price = 0;
+        Self::save_ticket(&env, ticket_id, &ticket);
+        ListingDelisted {
+            ticket_id,
+            organizer,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -2376,11 +2444,20 @@ impl TicketingContract {
     }
 
     /// Returns the number of events registered by `organizer`.
-    pub fn get_organizer_events(env: Env, organizer: Address) -> u32 {
+    ///
+    /// The name says "count", not "list": for the paginated list of event ids
+    /// use `list_organizer_events`.
+    pub fn organizer_event_count(env: Env, organizer: Address) -> u32 {
         env.storage()
             .persistent()
             .get(&DataKey::OrganizerEvents(organizer))
             .unwrap_or(0)
+    }
+
+    /// Deprecated alias of `organizer_event_count`, kept so existing callers
+    /// keep working. Use `organizer_event_count` in new code.
+    pub fn get_organizer_events(env: Env, organizer: Address) -> u32 {
+        Self::organizer_event_count(env, organizer)
     }
 
     /// Returns one page of the event ids registered by `organizer` (issue
@@ -2389,7 +2466,7 @@ impl TicketingContract {
     /// `start` reaches the end.
     ///
     /// Events created before this index existed have no slot here, so they are
-    /// skipped; `get_organizer_events` still counts them.
+    /// skipped; `organizer_event_count` still counts them.
     pub fn list_organizer_events(env: Env, organizer: Address, start: u32, limit: u32) -> Vec<u64> {
         let count: u32 = env
             .storage()
@@ -2454,6 +2531,65 @@ impl TicketingContract {
             .persistent()
             .get(&DataKey::TicketMetadataUri(token_id))
             .ok_or(Error::MetadataUriNotSet)
+    }
+
+    /// Sets the collection `name` and `symbol` that SEP-50 wallets display
+    /// (issue #505). Only the admin may call this. Setting them again replaces
+    /// the previous values.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotAdmin` for any other caller. Returns
+    /// `Error::InvalidCollectionMetadata` when `name` or `symbol` is empty or
+    /// longer than `MAX_NAME_LEN` or `MAX_COLLECTION_SYMBOL_LEN` bytes.
+    pub fn set_collection_metadata(
+        env: Env,
+        admin: Address,
+        name: String,
+        symbol: String,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        if name.is_empty()
+            || name.len() > MAX_NAME_LEN
+            || symbol.is_empty()
+            || symbol.len() > MAX_COLLECTION_SYMBOL_LEN
+        {
+            return Err(Error::InvalidCollectionMetadata);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::CollectionName, &name);
+        env.storage()
+            .instance()
+            .set(&DataKey::CollectionSymbol, &symbol);
+        Ok(())
+    }
+
+    /// SEP-50 `name`: the collection name set by `set_collection_metadata`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::CollectionMetadataNotSet` until the admin sets it.
+    pub fn name(env: Env) -> Result<String, Error> {
+        Self::extend_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::CollectionName)
+            .ok_or(Error::CollectionMetadataNotSet)
+    }
+
+    /// SEP-50 `symbol`: the collection symbol set by `set_collection_metadata`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::CollectionMetadataNotSet` until the admin sets it.
+    pub fn symbol(env: Env) -> Result<String, Error> {
+        Self::extend_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::CollectionSymbol)
+            .ok_or(Error::CollectionMetadataNotSet)
     }
 
     /// Starts a timed auction for an owned, valid ticket (issue #105). Bids are
@@ -2628,7 +2764,8 @@ impl TicketingContract {
             Some(winner) if listed => {
                 let seller = ticket.owner.clone();
                 let fee_bps = Self::platform_fee_bps_internal(&env);
-                let (royalty, platform_fee, seller_amount) = Self::resale_split(&event, bid, fee_bps)?;
+                let (royalty, platform_fee, seller_amount) =
+                    Self::resale_split(&event, bid, fee_bps)?;
                 Self::move_owner_balance(&env, ticket_id, &seller, winner);
                 ticket.owner = winner.clone();
                 ticket.transfers += 1;
@@ -2806,7 +2943,8 @@ impl TicketingContract {
         Self::ensure_transferable(&event)?;
         Self::ensure_transfer_allowed(&env, &ticket, &event)?;
         let fee_bps = Self::platform_fee_bps_internal(&env);
-        let (royalty, platform_fee, seller_amount) = Self::resale_split(&event, offer.amount, fee_bps)?;
+        let (royalty, platform_fee, seller_amount) =
+            Self::resale_split(&event, offer.amount, fee_bps)?;
 
         // --- effects: settle state before any untrusted external call. ---
         env.storage().persistent().remove(&key);
@@ -3112,6 +3250,15 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Publishes `EventConfigChanged` for one event setting (issue #516).
+    fn publish_config_changed(env: &Env, event_id: u64, field: &str) {
+        EventConfigChanged {
+            event_id,
+            field: Symbol::new(env, field),
+        }
+        .publish(env);
     }
 
     fn require_organizer(env: &Env, event_id: u64, organizer: &Address) -> Result<Event, Error> {
@@ -3863,12 +4010,20 @@ impl TicketingContract {
 
     fn platform_fee_config(env: &Env) -> Option<PlatformFee> {
         // Check new unified config first
-        if let Some(config) = env.storage().instance().get::<_, PlatformFee>(&DataKey::PlatformFee) {
+        if let Some(config) = env
+            .storage()
+            .instance()
+            .get::<_, PlatformFee>(&DataKey::PlatformFee)
+        {
             return Some(config);
         }
-        
+
         // Migration: check if old PlatformFeeBps exists
-        if let Some(old_bps) = env.storage().instance().get::<_, u32>(&DataKey::PlatformFeeBps) {
+        if let Some(old_bps) = env
+            .storage()
+            .instance()
+            .get::<_, u32>(&DataKey::PlatformFeeBps)
+        {
             // Get admin as default recipient
             if let Some(admin) = env.storage().instance().get::<_, Address>(&DataKey::Admin) {
                 // Return migrated config (don't auto-migrate storage, let setter do that)
@@ -3879,14 +4034,14 @@ impl TicketingContract {
                 });
             }
         }
-        
+
         None
     }
 
     fn get_platform_fee_bps(env: &Env) -> u32 {
         Self::platform_fee_config(env).map_or(0, |fee| fee.resale_bps)
     }
-    
+
     fn platform_fee_bps_internal(env: &Env) -> u32 {
         Self::platform_fee_config(env).map_or(0, |fee| fee.primary_bps)
     }
@@ -4028,13 +4183,13 @@ impl TicketingContract {
             return Err(Error::AlreadyRefunded);
         }
         Self::require_not_terminal(&ticket)?;
-        
+
         // Issue #438: Only allow refunds while the ticket has never been transferred.
         // A transferee or resale buyer should not be able to claim the original price.
         if ticket.transfers > 0 {
             return Err(Error::NotOwner);
         }
-        
+
         // Issue #439: Only refund tickets acquired through on-chain primary sale.
         // Tickets issued off-chain or as comps were not paid on-chain, so they
         // should not receive on-chain refunds.
@@ -4042,15 +4197,15 @@ impl TicketingContract {
         if !env.storage().persistent().has(&primary_sale_key) {
             return Err(Error::NotOwner);
         }
-        
+
         // Issue #440: Reject refunds for tickets with running auctions.
         // The auction holds bids in escrow and would settle against a refunded ticket.
         Self::ensure_no_auction(&env, ticket_id)?;
-        
+
         // Issue #440: Require the listing to be cancelled first if the ticket
         // is listed for resale (which includes open offers).
         Self::require_not_terminal(&ticket)?;
-        
+
         let mut event = Self::get_event_inner(&env, ticket.event_id)?;
         if let Some(refund_window) = event.refund_window_seconds {
             let refund_deadline = ticket.purchased_at.saturating_add(refund_window);
@@ -4070,7 +4225,7 @@ impl TicketingContract {
             // Calculate what was actually escrowed (original_price minus platform fee)
             let fee = Self::platform_fee_on(&env, ticket.original_price)?;
             let escrowed_amount = ticket.original_price - fee;
-            
+
             let refund_amount = ticket.original_price;
             let token_address = Self::payment_token_for_event(&env, &event)?;
             let refund_source = if event.escrow_enabled && event.escrow_balance >= escrowed_amount {
@@ -4102,7 +4257,7 @@ impl TicketingContract {
                 // So buyer-initiated refunds only work with escrow enabled
                 return Err(Error::EscrowNotEnabled);
             };
-            
+
             // Emit refund event (issue #493)
             TicketRefunded {
                 ticket_id,
