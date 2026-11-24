@@ -154,3 +154,144 @@ fn only_the_organizer_can_set_royalty_splits() {
         Err(Ok(Error::NotOrganizer))
     );
 }
+
+/// Issue #459: `set_royalty_splits` must reject a list with more than
+/// `MAX_ROYALTY_SPLITS` recipients to prevent budget exhaustion on resales.
+#[test]
+fn royalty_splits_rejects_list_over_max() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1); // 500 bps royalty
+
+    // Create MAX_ROYALTY_SPLITS + 1 recipients (9 when MAX is 8)
+    let mut splits = Vec::new(&env);
+    for i in 0..=MAX_ROYALTY_SPLITS {
+        let recipient = Address::generate(&env);
+        // Distribute 500 bps evenly: 500 / 9 = 55 bps each, with remainder on last
+        let bps = if i == MAX_ROYALTY_SPLITS {
+            500 - (55 * MAX_ROYALTY_SPLITS)
+        } else {
+            55
+        };
+        splits.push_back((recipient, bps));
+    }
+
+    let result = client.try_set_royalty_splits(&organizer, &1, &Some(splits));
+    assert_eq!(result, Err(Ok(Error::InvalidRoyalty)),
+        "split list with {} recipients should be rejected (max {})", 
+        MAX_ROYALTY_SPLITS + 1, MAX_ROYALTY_SPLITS);
+}
+
+/// Issue #459: `set_royalty_splits` must accept a list at exactly `MAX_ROYALTY_SPLITS`.
+#[test]
+fn royalty_splits_accepts_list_at_max() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1); // 500 bps royalty
+
+    // Create exactly MAX_ROYALTY_SPLITS recipients
+    let mut splits = Vec::new(&env);
+    for i in 0..MAX_ROYALTY_SPLITS {
+        let recipient = Address::generate(&env);
+        // Distribute 500 bps evenly: last one gets remainder
+        let bps = if i == MAX_ROYALTY_SPLITS - 1 {
+            500 - (62 * (MAX_ROYALTY_SPLITS - 1))
+        } else {
+            62
+        };
+        splits.push_back((recipient, bps));
+    }
+
+    let result = client.try_set_royalty_splits(&organizer, &1, &Some(splits));
+    assert!(result.is_ok(), 
+        "split list with exactly {} recipients should be accepted", 
+        MAX_ROYALTY_SPLITS);
+}
+
+/// Issue #459: `set_royalty_splits` must reject duplicate recipients.
+#[test]
+fn royalty_splits_rejects_duplicate_recipients() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1); // 500 bps royalty
+    let venue = Address::generate(&env);
+    let promoter = Address::generate(&env);
+
+    let result = client.try_set_royalty_splits(
+        &organizer,
+        &1,
+        &Some(soroban_sdk::vec![
+            &env,
+            (venue.clone(), 200u32),
+            (promoter.clone(), 100u32),
+            (venue.clone(), 200u32), // duplicate
+        ]),
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidRoyalty)),
+        "duplicate recipients should be rejected");
+}
+
+/// Issue #459: `set_royalty_splits` must reject zero-bps entries.
+#[test]
+fn royalty_splits_rejects_zero_bps_entries() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1); // 500 bps royalty
+    let venue = Address::generate(&env);
+    let promoter = Address::generate(&env);
+
+    let result = client.try_set_royalty_splits(
+        &organizer,
+        &1,
+        &Some(soroban_sdk::vec![
+            &env,
+            (venue.clone(), 500u32),
+            (promoter.clone(), 0u32), // zero bps
+        ]),
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidRoyalty)),
+        "zero-bps entries should be rejected");
+}
+
+/// Issue #459: Verify that a resale with MAX_ROYALTY_SPLITS recipients stays
+/// within the Soroban budget.
+#[test]
+fn resale_with_max_splits_stays_within_budget() {
+    let (env, client, token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1); // 500 bps royalty
+
+    // Create exactly MAX_ROYALTY_SPLITS recipients
+    let mut splits = Vec::new(&env);
+    let mut recipients = Vec::new(&env);
+    for i in 0..MAX_ROYALTY_SPLITS {
+        let recipient = Address::generate(&env);
+        recipients.push_back(recipient.clone());
+        // Distribute 500 bps evenly
+        let bps = if i == MAX_ROYALTY_SPLITS - 1 {
+            500 - (62 * (MAX_ROYALTY_SPLITS - 1))
+        } else {
+            62
+        };
+        splits.push_back((recipient, bps));
+    }
+
+    client.set_royalty_splits(&organizer, &1, &Some(splits));
+
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let ticket_id = list_sample_ticket(&env, &client, &organizer, &seller);
+
+    token_asset.mint(&buyer, &10_000i128);
+    
+    // This should succeed without hitting budget limits
+    client.buy_resale(&buyer, &ticket_id);
+
+    // Verify ticket was transferred
+    assert_eq!(client.get_ticket(&ticket_id).owner, buyer);
+    
+    // Verify all recipients received their share
+    let mut total_royalty_paid: i128 = 0;
+    for recipient in recipients.iter() {
+        let balance = token.balance(&recipient);
+        assert!(balance > 0, "each recipient should receive royalty");
+        total_royalty_paid += balance;
+    }
+    // Royalty on 1_100 at 500 bps = 55
+    assert_eq!(total_royalty_paid, 55, "total royalty paid should equal 55");
+}

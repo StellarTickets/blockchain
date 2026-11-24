@@ -68,6 +68,12 @@ pub const MAX_EVENT_METADATA_VALUE_LEN: u32 = 256;
 /// dropped so a frequently traded ticket's history stays a fixed size.
 pub const MAX_OWNER_HISTORY: u32 = 5;
 
+/// Maximum number of royalty split recipients (issue #459). A long list
+/// can push resales past the Soroban budget and make tickets unsellable.
+/// Each recipient triggers a token transfer on every resale, auction, and
+/// offer settlement.
+pub const MAX_ROYALTY_SPLITS: u32 = 8;
+
 /// Stable lowercase labels for the optional common category vocabulary.
 pub const CATEGORY_CONCERT: &str = "concert";
 pub const CATEGORY_FLIGHT: &str = "flight";
