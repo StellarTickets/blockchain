@@ -1268,6 +1268,7 @@ impl TicketingContract {
         if from == to {
             return Err(Error::SelfTransfer);
         }
+        Self::ensure_no_duplicate_ids(&env, &ticket_ids)?;
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
             if ticket.owner != from {
@@ -1836,6 +1837,7 @@ impl TicketingContract {
         if ticket_ids.len() > MAX_BATCH_SIZE {
             return Err(Error::BatchTooLarge);
         }
+        Self::ensure_no_duplicate_ids(&env, &ticket_ids)?;
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
             let event = Self::require_check_in_authority(&env, ticket.event_id, &organizer)?;
@@ -2009,6 +2011,7 @@ impl TicketingContract {
         if ticket_ids.len() > MAX_BATCH_SIZE {
             return Err(Error::BatchTooLarge);
         }
+        Self::ensure_no_duplicate_ids(&env, &ticket_ids)?;
         for ticket_id in ticket_ids.iter() {
             let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
             Self::require_organizer(&env, ticket.event_id, &organizer)?;
@@ -3496,6 +3499,20 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Rejects a batch that names the same ticket id twice (issue #510). Without
+    /// this check the second occurrence sees the state the first one left behind
+    /// and fails with a misleading `NotOwner`, `AlreadyUsed` or `Revoked`.
+    fn ensure_no_duplicate_ids(env: &Env, ticket_ids: &Vec<u64>) -> Result<(), Error> {
+        let mut seen: Map<u64, bool> = Map::new(env);
+        for ticket_id in ticket_ids.iter() {
+            if seen.contains_key(ticket_id) {
+                return Err(Error::DuplicateTicketInBatch);
+            }
+            seen.set(ticket_id, true);
+        }
+        Ok(())
     }
 
     /// Stores a ticket's metadata URI under its own key (issue #109).

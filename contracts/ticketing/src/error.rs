@@ -343,4 +343,10 @@ pub enum Error {
     CollectionMetadataNotSet = 99,
     /// The collection name or symbol is empty or longer than its maximum (issue #505).
     InvalidCollectionMetadata = 100,
+
+    // ------------------------------------------------------------------
+    // Batch validation
+    // ------------------------------------------------------------------
+    /// A batch entry point was given the same ticket id more than once (issue #510).
+    DuplicateTicketInBatch = 101,
 }
