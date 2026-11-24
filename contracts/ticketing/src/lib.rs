@@ -2568,18 +2568,56 @@ impl TicketingContract {
     }
 
     /// SEP-50 `token_uri`: the metadata URI set when the ticket was issued
-    /// (issues #109 and #110).
+    /// (issues #109 and #110). A ticket issued without a URI, such as one from
+    /// `purchase_primary`, falls back to `{base}/{token_id}` when the admin has
+    /// set a base URI with `set_base_token_uri` (issue #506).
     ///
     /// # Errors
     ///
     /// Returns `Error::TicketNotFound` when no ticket with `token_id` exists,
-    /// and `Error::MetadataUriNotSet` when it was issued without a URI.
+    /// and `Error::MetadataUriNotSet` when there is neither a per-ticket URI
+    /// nor a base URI.
     pub fn token_uri(env: Env, token_id: u64) -> Result<String, Error> {
         Self::get_ticket(env.clone(), token_id)?;
-        env.storage()
+        if let Some(uri) = env
+            .storage()
             .persistent()
-            .get(&DataKey::TicketMetadataUri(token_id))
-            .ok_or(Error::MetadataUriNotSet)
+            .get::<_, String>(&DataKey::TicketMetadataUri(token_id))
+        {
+            return Ok(uri);
+        }
+        let base: String = env
+            .storage()
+            .instance()
+            .get(&DataKey::BaseTokenUri)
+            .ok_or(Error::MetadataUriNotSet)?;
+        Self::join_base_uri(&env, &base, token_id)
+    }
+
+    /// Sets or clears the base URI behind the `token_uri` fallback (issue #506).
+    /// Pass `None` to clear it, after which tickets without a per-ticket URI
+    /// report `MetadataUriNotSet` again. Changes apply to every event at once.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotAdmin` when the caller is not the admin. Returns
+    /// `Error::EmptyNameOrCategory` for an empty base URI and `Error::StringTooLong`
+    /// when it exceeds `MAX_METADATA_URI_LEN`, leaving the stored value unchanged.
+    pub fn set_base_token_uri(
+        env: Env,
+        admin: Address,
+        base_uri: Option<String>,
+    ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
+        Self::require_admin(&env, &admin)?;
+        match base_uri {
+            Some(uri) => {
+                Self::validate_label(&uri, MAX_METADATA_URI_LEN)?;
+                env.storage().instance().set(&DataKey::BaseTokenUri, &uri);
+            }
+            None => env.storage().instance().remove(&DataKey::BaseTokenUri),
+        }
+        Ok(())
     }
 
     /// Sets the collection `name` and `symbol` that SEP-50 wallets display
@@ -3499,6 +3537,34 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    /// Builds `{base}/{token_id}` for the `token_uri` fallback (issue #506).
+    /// Soroban strings cannot be concatenated, so the bytes are assembled in a
+    /// fixed buffer. The result is bounded by `MAX_METADATA_URI_LEN`.
+    fn join_base_uri(env: &Env, base: &String, token_id: u64) -> Result<String, Error> {
+        let mut digits = [0u8; 20];
+        let mut start = digits.len();
+        let mut remaining = token_id;
+        loop {
+            start -= 1;
+            digits[start] = b'0' + (remaining % 10) as u8;
+            remaining /= 10;
+            if remaining == 0 {
+                break;
+            }
+        }
+        let base_len = base.len() as usize;
+        let id_len = digits.len() - start;
+        let total = base_len + 1 + id_len;
+        if total > MAX_METADATA_URI_LEN as usize {
+            return Err(Error::StringTooLong);
+        }
+        let mut buf = [0u8; MAX_METADATA_URI_LEN as usize];
+        base.copy_into_slice(&mut buf[..base_len]);
+        buf[base_len] = b'/';
+        buf[base_len + 1..total].copy_from_slice(&digits[start..]);
+        Ok(String::from_bytes(env, &buf[..total]))
     }
 
     /// Rejects a batch that names the same ticket id twice (issue #510). Without

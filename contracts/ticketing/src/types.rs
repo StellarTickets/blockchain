@@ -420,6 +420,10 @@ pub enum DataKey {
     /// Unified platform fee configuration for both primary and resales (issue #427).
     /// Contains primary_bps, resale_bps, and recipient. Absent means no fees.
     PlatformFee,
+    /// Optional base URI for tickets without a per-ticket metadata URI (issue #506).
+    /// `token_uri` returns `{base}/{token_id}` from it. Instance storage, so one
+    /// value covers every event. Absent means no fallback.
+    BaseTokenUri,
     /// Highest royalty_bps across all events, cached so set_platform_fee can
     /// validate that the platform fee plus the highest royalty never exceeds
     /// 100% (issue #103). Zero when no events have been created.
