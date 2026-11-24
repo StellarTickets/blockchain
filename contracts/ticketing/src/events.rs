@@ -277,6 +277,13 @@ pub struct EventConfigChanged {
     #[topic]
     pub event_id: u64,
     pub field: Symbol,
+/// Emitted when a gift claim is created for a ticket (issue #325).
+/// Emitted by `create_gift_claim` after the claim is saved (issue #325).
+pub struct GiftClaimCreated {
+    #[topic]
+    pub ticket_id: u64,
+    pub from: Address,
+    pub expires_at: u64,
 }
 
 #[contractevent]
@@ -287,4 +294,11 @@ pub struct ListingDelisted {
     #[topic]
     pub ticket_id: u64,
     pub organizer: Address,
+/// Emitted when a gift claim is successfully claimed (issue #325).
+/// Emitted by `claim_gift` after ownership transfers (issue #325).
+pub struct GiftClaimed {
+    #[topic]
+    pub ticket_id: u64,
+    pub from: Address,
+    pub recipient: Address,
 }
