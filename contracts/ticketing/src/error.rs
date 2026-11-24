@@ -349,4 +349,10 @@ pub enum Error {
     // ------------------------------------------------------------------
     /// A batch entry point was given the same ticket id more than once (issue #510).
     DuplicateTicketInBatch = 101,
+
+    // ------------------------------------------------------------------
+    // Price slippage protection
+    // ------------------------------------------------------------------
+    /// The tier price increased between quote and purchase (issue #450).
+    PriceChanged = 102,
 }

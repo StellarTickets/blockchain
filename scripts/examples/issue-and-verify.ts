@@ -93,22 +93,22 @@ async function main(): Promise<void> {
   const ticketId = scValToNative((await server.getTransaction(sent.hash)).result!.returnValue) as bigint;
   console.log(`issued ticket ${ticketId} to ${buyer.publicKey()}`);
 
-  // verify_ticket is read-only: simulate it and decode the return value.
+  // get_ticket is read-only: simulate it and decode the return value.
   const verifyTx = new TransactionBuilder(await server.getAccount(organizer.publicKey()), {
     fee: BASE_FEE,
     networkPassphrase: Networks.TESTNET,
   })
-    .addOperation(contract.call("verify_ticket", nativeToScVal(ticketId, { type: "u64" })))
+    .addOperation(contract.call("get_ticket", nativeToScVal(ticketId, { type: "u64" })))
     .setTimeout(30)
     .build();
 
   const simulation = await server.simulateTransaction(verifyTx);
   const retval = simulation.result?.[0]?.retval;
   if (!retval) {
-    throw new Error(`verify_ticket simulation failed: ${simulation.error}`);
+    throw new Error(`get_ticket simulation failed: ${simulation.error}`);
   }
   const ticket = scValToNative(retval) as Record<string, unknown>;
-  console.log("verified ticket:", ticket);
+  console.log("retrieved ticket:", ticket);
 
   if (ticket.owner !== buyer.publicKey()) {
     throw new Error("unexpected ticket owner");
