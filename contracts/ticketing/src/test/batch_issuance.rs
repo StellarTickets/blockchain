@@ -160,6 +160,7 @@ fn issue_tickets_is_organizer_only() {
     );
 }
 
+<<<<<<< HEAD
 // Issue #508: each batch recipient can carry its own metadata URI.
 
 fn recipient_with_uri(env: &Env, to: &Address, uri: Option<&str>) -> TicketRecipient {
@@ -252,6 +253,21 @@ fn batch_rejects_an_empty_metadata_uri() {
     assert_eq!(
         client.try_issue_tickets(&organizer, &1, &recipients),
         Err(Ok(Error::EmptyNameOrCategory))
+    );
+    assert_eq!(client.get_event(&1).tickets_issued, 0);
+}
+
+#[test]
+fn issue_tickets_respects_pause_switch() {
+    let (env, client, _token, _token_asset, admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let (recipients, _owners) = batch_of(&env, 2);
+
+    client.pause(&admin);
+
+    assert_eq!(
+        client.try_issue_tickets(&organizer, &1, &recipients),
+        Err(Ok(Error::ContractPaused))
     );
     assert_eq!(client.get_event(&1).tickets_issued, 0);
 }

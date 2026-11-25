@@ -1,4 +1,4 @@
-//! StellarTickets ticketing smart contract for Soroban on Stellar.
+
 #![no_std]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
@@ -25,6 +25,9 @@ pub use events::{
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
     PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
     TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
+    EventConfigChanged, ListingDelisted, GiftClaimed, GiftClaimCreated,
+    AllowlistMembersAdded, AllowlistMembersRemoved, TicketUsesChanged, TicketValidityChanged,
+    TicketPassedOut,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -35,20 +38,7 @@ use soroban_sdk::{
     contract, contractimpl, token, Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
 };
 
-/// # Authorization ordering (issue #206)
-///
-/// Every state-changing entry point below calls `require_auth()` as its
-/// very first statement, before any storage lookup or business-rule check
-/// (existence of a ticket/event, ownership, status, etc.). This ordering is
-/// deliberate: checking auth first means a caller who has not authorized
-/// the call learns nothing about contract state from the error they get
-/// back — not whether a ticket exists, who owns it, or what state it's in.
-/// Validating business rules before auth would leak that information to an
-/// unauthenticated caller through which error is returned. Keep this order
-/// when adding new entry points. See
-/// `require_auth_runs_before_business_validation` in `test/auth.rs` for the
-/// regression test.
-/// The main ticketing contract structure.
+
 #[contract]
 pub struct TicketingContract;
 
@@ -705,6 +695,12 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+        TicketPassedOut {
+            ticket_id,
+            organizer,
+            reentry_count: count,
+        }
+        .publish(&env);
         Ok(count)
     }
 
@@ -748,6 +744,8 @@ impl TicketingContract {
         if max_uses == 0 || max_uses < used {
             return Err(Error::InvalidMaxUses);
         }
+        // Capture old value before updating
+        let old_max_uses = Self::max_uses_of(&env, ticket_id);
         let key = DataKey::MaxUses(ticket_id);
         env.storage().persistent().set(&key, &max_uses);
         env.storage()
@@ -761,6 +759,13 @@ impl TicketingContract {
             };
             Self::save_ticket(&env, ticket_id, &ticket);
         }
+        TicketUsesChanged {
+            ticket_id,
+            organizer,
+            old_max_uses,
+            new_max_uses: max_uses,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -854,6 +859,7 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_initialized(&env)?;
+        Self::require_not_paused(&env)?;
         if recipients.is_empty() {
             return Err(Error::EmptyBatch);
         }
@@ -999,15 +1005,19 @@ impl TicketingContract {
     ///
     /// The price is the organizer's configured `set_tier_price` value for the
     /// tier — it is no longer supplied by the caller, so a buyer cannot
-    /// underpay a paid event (issue #127). Fails with `TierPriceNotSet` when
-    /// the organizer has not priced that tier. Increments the event's
-    /// monotonic `tickets_issued` counter by 1.
+    /// underpay a paid event (issue #127). `max_price` protects the buyer
+    /// from front-running: if the organizer calls `set_tier_price` between
+    /// the buyer's quote and purchase, and the new price exceeds `max_price`,
+    /// the purchase fails with `PriceChanged` (issue #450). Fails with
+    /// `TierPriceNotSet` when the organizer has not priced that tier.
+    /// Increments the event's monotonic `tickets_issued` counter by 1.
     pub fn purchase_primary(
         env: Env,
         buyer: Address,
         event_id: u64,
         tier: String,
         seat: String,
+        max_price: i128,
     ) -> Result<u64, Error> {
         Self::extend_instance_ttl(&env);
         buyer.require_auth();
@@ -1022,6 +1032,9 @@ impl TicketingContract {
         Self::enforce_wallet_limit(&env, event_id, &buyer, &event)?;
         Self::ensure_capacity(&event, 1)?;
         let price = Self::tier_price(&env, event_id, &tier)?;
+        if price > max_price {
+            return Err(Error::PriceChanged);
+        }
         Self::reserve_tier_capacity(&env, event_id, &tier, 1)?;
         let token_client = token::Client::new(&env, &Self::payment_token_for_event(&env, &event)?);
         // The platform fee goes to the admin straight from the buyer. The
@@ -1849,10 +1862,20 @@ impl TicketingContract {
     ) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
-        Self::require_organizer(&env, event_id, &organizer)?;
+        let event = Self::require_organizer(&env, event_id, &organizer)?;
         if let (Some(start), Some(end)) = (sale_start, sale_end) {
             if end <= start {
                 return Err(Error::InvalidSaleWindow);
+            }
+        }
+        // Issue #489: Validate that sale_end doesn't exceed ticket_expires_at.
+        // If tickets expire before the sale ends, those final sales would issue
+        // already-expired tickets.
+        if let Some(sale_end_ts) = sale_end {
+            if let Some(expires_at) = event.ticket_expires_at {
+                if sale_end_ts > expires_at {
+                    return Err(Error::InvalidSaleWindow);
+                }
             }
         }
         let key = DataKey::SaleWindow(event_id);
@@ -1912,6 +1935,13 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        TicketValidityChanged {
+            ticket_id,
+            organizer,
+            valid_from,
+            valid_until,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -4599,6 +4629,7 @@ impl TicketingContract {
         if members.len() > MAX_BATCH_SIZE {
             return Err(Error::BatchTooLarge);
         }
+        let count = members.len();
         for member in members.iter() {
             let key = DataKey::AllowlistMember(event_id, member);
             env.storage().persistent().set(&key, &true);
@@ -4606,6 +4637,12 @@ impl TicketingContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
+        AllowlistMembersAdded {
+            event_id,
+            organizer,
+            count,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -4626,11 +4663,18 @@ impl TicketingContract {
         if members.len() > MAX_BATCH_SIZE {
             return Err(Error::BatchTooLarge);
         }
+        let count = members.len();
         for member in members.iter() {
             env.storage()
                 .persistent()
                 .remove(&DataKey::AllowlistMember(event_id, member));
         }
+        AllowlistMembersRemoved {
+            event_id,
+            organizer,
+            count,
+        }
+        .publish(&env);
         Ok(())
     }
 

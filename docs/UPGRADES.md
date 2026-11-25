@@ -22,6 +22,22 @@ explicit, reviewable act. It changes the trust model described in
 executable is replaced once the invocation succeeds, so a failed call leaves
 the previous build in place.
 
+## Scheduled removals
+
+### `verify_ticket` (issue #499)
+
+**Removal version:** `v2.0.0`
+
+The deprecated `verify_ticket()` entry point is retained for ABI compatibility.
+New integrations should use `get_ticket()` instead. `verify_ticket` will be
+removed in version `v2.0.0` to clean up the contract interface.
+
+**Migration steps:**
+1. Update all client code and examples to use `get_ticket()` instead of
+   `verify_ticket()`.
+2. After the removal, any calls to `verify_ticket()` will fail with a
+   `ContractError` as the entry point will no longer exist in the WASM.
+
 ## State migration rules
 
 `upgrade` changes code only. Storage is never rewritten, so every build

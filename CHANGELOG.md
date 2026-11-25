@@ -22,6 +22,26 @@ This project follows [Keep a Changelog](https://keepachangelog.com/).
   not compile with both.
 - Repair merged organizer approval and packed ticket lookup definitions, and
   update a stale event-creation test so the contract builds again.
+- `issue_tickets` now checks the pause switch before minting (issue #456).
+  An organizer can no longer batch-issue tickets during an emergency pause.
+
+### Changed
+- Rename `get_organizer_events` to `organizer_event_count` (#504). The old
+  name stays as a deprecated alias.
+- Centralize organizer authorization and terminal ticket status checks without
+  changing operation-specific revocation rules (#348, #349).
+- Keep ticket lifecycle encoding with the types in `types.rs`, preserving
+  crate-root exports and byte-identical WASM for the isolated move (#347).
+- Upgrade `soroban-sdk` from 26 to 28. See [CONTRIBUTING.md](CONTRIBUTING.md)
+  for the dependency versioning policy and upgrade procedure.
+- `purchase_primary` now requires a `max_price` parameter to protect buyers
+  from front-running when organizers change tier prices (issue #450). If the
+  tier price exceeds `max_price`, the purchase fails with `PriceChanged`.
+
+### Deprecated
+- `verify_ticket` is deprecated in favor of `get_ticket` and will be removed
+  in version `v2.0.0` (issue #499). Update integrations to use `get_ticket`
+  instead. See [UPGRADES.md](docs/UPGRADES.md) for the removal schedule.
 
 ### Changed
 - `TicketRecipient` gains a `metadata_uri` field (#508). Clients that build

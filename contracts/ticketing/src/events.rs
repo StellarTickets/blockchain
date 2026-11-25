@@ -398,6 +398,14 @@ pub struct CheckInSignerRemoved {
 pub struct ContractPaused {
     #[topic]
     pub admin: Address,
+/// Emitted when members are added to the presale allowlist (issue #495).
+/// Published after all members are successfully added to storage.
+pub struct AllowlistMembersAdded {
+    #[topic]
+    pub event_id: u64,
+    pub organizer: Address,
+    /// Number of members added in this call.
+    pub count: u32,
 }
 
 #[contractevent]
@@ -407,4 +415,52 @@ pub struct ContractPaused {
 pub struct ContractUnpaused {
     #[topic]
     pub admin: Address,
+/// Emitted when members are removed from the presale allowlist (issue #495).
+/// Published after all members are successfully removed from storage.
+pub struct AllowlistMembersRemoved {
+    #[topic]
+    pub event_id: u64,
+    pub organizer: Address,
+    /// Number of members removed in this call.
+    pub count: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when a ticket's max uses are updated (issue #494).
+/// Published after the max_uses value is successfully updated.
+pub struct TicketUsesChanged {
+    #[topic]
+    pub ticket_id: u64,
+    pub organizer: Address,
+    /// Previous max uses value.
+    pub old_max_uses: u32,
+    /// New max uses value.
+    pub new_max_uses: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when a ticket's validity window is updated (issue #494).
+/// Published after the validity window is successfully set or removed.
+pub struct TicketValidityChanged {
+    #[topic]
+    pub ticket_id: u64,
+    pub organizer: Address,
+    /// New valid_from timestamp (None if open-ended or removed).
+    pub valid_from: Option<u64>,
+    /// New valid_until timestamp (None if open-ended or removed).
+    pub valid_until: Option<u64>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when a ticket is passed out for re-entry (issue #491).
+/// Published after the used count is decremented and status set to Valid.
+pub struct TicketPassedOut {
+    #[topic]
+    pub ticket_id: u64,
+    pub organizer: Address,
+    /// Current re-entry count after this pass-out.
+    pub reentry_count: u32,
 }

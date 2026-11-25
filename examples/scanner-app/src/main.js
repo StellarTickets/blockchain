@@ -1,9 +1,9 @@
 /**
  * Gate-scanner example for the ticketing contract (issue #56).
  *
- * Verifies a ticket by simulating a read-only `get_ticket` (or the
- * deprecated `verify_ticket` alias) against the deployed contract on
- * Stellar testnet. No signature or fee is needed for the read.
+ * Verifies a ticket by simulating a read-only `get_ticket` against the
+ * deployed contract on Stellar testnet. No signature or fee is needed
+ * for the read. (`verify_ticket` is deprecated; use `get_ticket` instead.)
  *
  * A production scanner would pair this with a QR/camera input and, when
  * the gate device holds the organizer's or a delegated check-in signer's
