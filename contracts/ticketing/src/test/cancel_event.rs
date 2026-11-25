@@ -1,8 +1,9 @@
 //! Event cancellation (issue #91).
 //!
 //! `cancel_event` marks an event cancelled. Once cancelled, the event rejects
-//! new issuance, primary sales and resale listings. Tickets issued before the
-//! cancel stay valid.
+//! new issuance, primary sales, resale listings, check-ins, ticket transfers,
+//! auction settlement and gift claims. Tickets issued before the cancel stay
+//! valid.
 
 use super::*;
 
@@ -124,4 +125,69 @@ fn tickets_issued_before_cancel_stay_valid() {
 
     assert_eq!(client.get_ticket(&ticket_id).status, TicketStatus::Valid);
     assert!(client.is_valid(&ticket_id, &owner));
+}
+
+#[test]
+fn cancelled_event_blocks_transfer_ticket() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let ticket_id = issue_sample_ticket(&env, &client, &organizer, 1, &seller, 1_000);
+    client.cancel_event(&organizer, &1);
+
+    assert_eq!(
+        client.try_transfer_ticket(&seller, &buyer, &ticket_id),
+        Err(Ok(Error::EventCancelled))
+    );
+}
+
+#[test]
+fn cancelled_event_blocks_check_in() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    client.set_event_check_in_window(&organizer, &1, &Some(3600u64), &Some(7200u64));
+    let owner = Address::generate(&env);
+    let ticket_id = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    client.cancel_event(&organizer, &1);
+
+    assert_eq!(
+        client.try_check_in(&organizer, &ticket_id),
+        Err(Ok(Error::EventCancelled))
+    );
+}
+
+#[test]
+fn cancelled_event_blocks_settle_auction() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let seller = Address::generate(&env);
+    let bidder = Address::generate(&env);
+    let tier = ga(&env);
+    let ticket_id = issue_sample_ticket(&env, &client, &organizer, 1, &seller, 1_000);
+    client.list_for_resale(&seller, &ticket_id, &1_100i128);
+    client.start_auction(&seller, &ticket_id, &3600u64);
+    client.place_bid(&bidder, &ticket_id, &1_200i128);
+    client.cancel_event(&organizer, &1);
+
+    let buyer_error = client.try_settle_auction(&ticket_id);
+    assert!(buyer_error.is_err());
+    assert_eq!(buyer_error, Err(Ok(Error::EventCancelled)));
+}
+
+#[test]
+fn cancelled_event_blocks_claim_gift() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let gifter = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let ticket_id = issue_sample_ticket(&env, &client, &organizer, 1, &gifter, 1_000);
+    let secret = Bytes::from_array(&env, &vec![0u8; 32]);
+    client.create_gift_claim(&gifter, &ticket_id, &secret, &10_000u64);
+    client.cancel_event(&organizer, &1);
+
+    assert_eq!(
+        client.try_claim_gift(&recipient, &ticket_id, &secret),
+        Err(Ok(Error::EventCancelled))
+    );
 }
