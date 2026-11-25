@@ -1,8 +1,4 @@
-//! Timed auctions for resale tickets (issue #105).
-//!
-//! Bids are escrowed in the contract. Each new high bid refunds the bidder it
-//! displaces, and settlement pays the royalty and the seller from the winning
-//! bid.
+
 
 use super::*;
 use soroban_sdk::BytesN;
