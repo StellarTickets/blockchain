@@ -871,6 +871,7 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         Self::require_initialized(&env)?;
+        Self::require_not_paused(&env)?;
         if recipients.is_empty() {
             return Err(Error::EmptyBatch);
         }
@@ -1016,15 +1017,19 @@ impl TicketingContract {
     ///
     /// The price is the organizer's configured `set_tier_price` value for the
     /// tier — it is no longer supplied by the caller, so a buyer cannot
-    /// underpay a paid event (issue #127). Fails with `TierPriceNotSet` when
-    /// the organizer has not priced that tier. Increments the event's
-    /// monotonic `tickets_issued` counter by 1.
+    /// underpay a paid event (issue #127). `max_price` protects the buyer
+    /// from front-running: if the organizer calls `set_tier_price` between
+    /// the buyer's quote and purchase, and the new price exceeds `max_price`,
+    /// the purchase fails with `PriceChanged` (issue #450). Fails with
+    /// `TierPriceNotSet` when the organizer has not priced that tier.
+    /// Increments the event's monotonic `tickets_issued` counter by 1.
     pub fn purchase_primary(
         env: Env,
         buyer: Address,
         event_id: u64,
         tier: String,
         seat: String,
+        max_price: i128,
     ) -> Result<u64, Error> {
         Self::extend_instance_ttl(&env);
         buyer.require_auth();
@@ -1039,6 +1044,9 @@ impl TicketingContract {
         Self::enforce_wallet_limit(&env, event_id, &buyer, &event)?;
         Self::ensure_capacity(&event, 1)?;
         let price = Self::tier_price(&env, event_id, &tier)?;
+        if price > max_price {
+            return Err(Error::PriceChanged);
+        }
         Self::reserve_tier_capacity(&env, event_id, &tier, 1)?;
         let token_client = token::Client::new(&env, &Self::payment_token_for_event(&env, &event)?);
         // The platform fee goes to the admin straight from the buyer. The

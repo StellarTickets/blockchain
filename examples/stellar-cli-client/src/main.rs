@@ -4,7 +4,7 @@
 //! binary must be on `PATH`) that runs on the Stellar testnet:
 //!
 //! 1. submits `issue_ticket` with the given identity as organizer,
-//! 2. reads the ticket back with a simulated `verify_ticket` call
+//! 2. reads the ticket back with a simulated `get_ticket` call
 //!    (`--send no`).
 //!
 //! Usage:
@@ -96,11 +96,11 @@ fn main() {
         "--send".to_string(),
         "no".to_string(),
         "--".to_string(),
-        "verify_ticket".to_string(),
+        "get_ticket".to_string(),
         "--ticket-id".to_string(),
         issued,
     ];
 
     let ticket = run_stellar(&verify_args);
-    println!("verify_ticket -> {ticket}");
+    println!("get_ticket -> {ticket}");
 }
