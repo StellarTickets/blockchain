@@ -169,3 +169,32 @@ fn burn_removes_the_ticket_from_the_owner_list() {
     assert_eq!(client.tickets_of(&owner, &0, &10).len(), 0);
     assert_eq!(client.balance(&owner), 0);
 }
+
+#[test]
+fn pages_cover_each_remaining_ticket_once_after_a_burn_and_a_transfer() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let owner = Address::generate(&env);
+    let other = Address::generate(&env);
+    let t1 = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    let t2 = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    let t3 = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    let t4 = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+
+    client.transfer_ticket(&owner, &t1, &other);
+    client.check_in(&organizer, &t2);
+    env.ledger()
+        .set_timestamp(10_000 + USED_TICKET_RETENTION_SECONDS);
+    client.burn_used_ticket(&organizer, &t2);
+
+    let first = client.tickets_of(&owner, &0, &1);
+    let second = client.tickets_of(&owner, &1, &1);
+    assert_eq!(first.len(), 1);
+    assert_eq!(second.len(), 1);
+    assert_ne!(first.get(0).unwrap(), second.get(0).unwrap());
+    for id in [first.get(0).unwrap(), second.get(0).unwrap()] {
+        assert!(id == t3 || id == t4);
+    }
+    assert_eq!(client.tickets_of(&owner, &2, &1).len(), 0);
+    assert_eq!(client.tickets_of(&other, &0, &10).len(), 1);
+}
