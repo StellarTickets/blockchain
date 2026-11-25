@@ -390,3 +390,21 @@ pub struct CheckInSignerRemoved {
     pub event_id: u64,
     pub signer: Address,
 }
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin pauses the contract (issue #492).
+/// While paused, all state-changing operations fail with `ContractPaused`.
+pub struct ContractPaused {
+    #[topic]
+    pub admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin unpauses the contract (issue #492).
+/// Re-enables all state-changing operations.
+pub struct ContractUnpaused {
+    #[topic]
+    pub admin: Address,
+}

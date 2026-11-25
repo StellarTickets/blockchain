@@ -15,6 +15,7 @@ use soroban_sdk::{
 
 mod active_supply;
 mod admin_transfer;
+mod allowlist_bounds;
 mod auth;
 mod auth_matrix;
 mod base_token_uri;
@@ -46,6 +47,7 @@ mod organizer_delist;
 mod organizer_listing;
 mod owner_history;
 mod owner_index;
+mod pause_events;
 mod platform_fee;
 mod presale;
 mod proptests;

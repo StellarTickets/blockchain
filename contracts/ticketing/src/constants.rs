@@ -79,6 +79,10 @@ pub const MAX_OWNER_HISTORY: u32 = 5;
 pub const MAX_ROYALTY_SPLITS: u32 = 8;
 
 /// Stable lowercase labels for the optional common category vocabulary.
+/// **Note (Issue #497):** These constants are reference values only. The contract
+/// does NOT validate `Event.category` against them — the backend sends its own
+/// `Industry` enum values (e.g., `CONCERTS`, `SPORTS`). These constants remain
+/// exported for client convenience but do not constrain what the backend may send.
 pub const CATEGORY_CONCERT: &str = "concert";
 pub const CATEGORY_FLIGHT: &str = "flight";
 pub const CATEGORY_SPORTS: &str = "sports";

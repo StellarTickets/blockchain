@@ -19,13 +19,12 @@ use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
 pub use events::{
     AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced, CheckInSignerAdded,
-    CheckInSignerRemoved, ContractInitialized, ContractUpgraded, EventCancelled,
-    EventConfigChanged, EventCreated, GiftClaimCreated, GiftClaimed, ListingCancelled,
+    CheckInSignerRemoved, ContractInitialized, ContractPaused, ContractUnpaused, ContractUpgraded, 
+    EventCancelled, EventConfigChanged, EventCreated, GiftClaimCreated, GiftClaimed, ListingCancelled,
     ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
     PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
     TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
-    EventConfigChanged, ListingDelisted, GiftClaimed, GiftClaimCreated,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -682,7 +681,8 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         organizer.require_auth();
         let mut ticket = Self::get_ticket_inner(&env, ticket_id)?;
-        let event = Self::require_organizer(&env, ticket.event_id, &organizer)?;
+        // Issue #490: Use require_check_in_authority so delegated signers can pass out.
+        let event = Self::require_check_in_authority(&env, ticket.event_id, &organizer)?;
         if ticket.status != TicketStatus::Used {
             return Err(Error::TicketNotUsed);
         }
@@ -4442,6 +4442,8 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         Self::require_admin(&env, &admin)?;
         env.storage().instance().set(&DataKey::Paused, &true);
+        // Issue #492: Publish ContractPaused event.
+        ContractPaused { admin }.publish(&env);
         Ok(())
     }
 
@@ -4451,6 +4453,8 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         Self::require_admin(&env, &admin)?;
         env.storage().instance().set(&DataKey::Paused, &false);
+        // Issue #492: Publish ContractUnpaused event.
+        ContractUnpaused { admin }.publish(&env);
         Ok(())
     }
 
@@ -4588,6 +4592,13 @@ impl TicketingContract {
         organizer.require_auth();
         Self::require_not_paused(&env)?;
         Self::require_organizer(&env, event_id, &organizer)?;
+        // Issue #496: Enforce MAX_BATCH_SIZE and reject empty lists.
+        if members.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if members.len() > MAX_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
         for member in members.iter() {
             let key = DataKey::AllowlistMember(event_id, member);
             env.storage().persistent().set(&key, &true);
@@ -4608,6 +4619,13 @@ impl TicketingContract {
         organizer.require_auth();
         Self::require_not_paused(&env)?;
         Self::require_organizer(&env, event_id, &organizer)?;
+        // Issue #496: Enforce MAX_BATCH_SIZE and reject empty lists.
+        if members.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if members.len() > MAX_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
         for member in members.iter() {
             env.storage()
                 .persistent()
