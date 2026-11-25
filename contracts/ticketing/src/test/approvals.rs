@@ -156,3 +156,25 @@ fn transfer_from_respects_soulbound_events() {
         Err(Ok(Error::NotTransferable))
     );
 }
+
+#[test]
+fn a_resale_purchase_clears_the_operator_approval() {
+    let (env, client, _token, token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    let seller = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    mint_tokens(&token_asset, &buyer, 1_000);
+    let ticket_id = owned_ticket(&env, &client, &organizer, &seller);
+
+    client.approve(&seller, &ticket_id, &operator);
+    client.list_for_resale(&seller, &ticket_id, &1_000);
+    client.buy_resale(&buyer, &ticket_id);
+
+    assert_eq!(client.owner_of(&ticket_id), buyer);
+    assert_eq!(client.get_approved(&ticket_id), None);
+    assert_eq!(
+        client.try_transfer_from(&operator, &buyer, &seller, &ticket_id),
+        Err(Ok(Error::NotApproved))
+    );
+}
