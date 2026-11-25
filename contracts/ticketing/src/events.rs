@@ -398,6 +398,10 @@ pub struct CheckInSignerRemoved {
 pub struct ContractPaused {
     #[topic]
     pub admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Emitted when members are added to the presale allowlist (issue #495).
 /// Published after all members are successfully added to storage.
 pub struct AllowlistMembersAdded {
@@ -415,6 +419,10 @@ pub struct AllowlistMembersAdded {
 pub struct ContractUnpaused {
     #[topic]
     pub admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Emitted when members are removed from the presale allowlist (issue #495).
 /// Published after all members are successfully removed from storage.
 pub struct AllowlistMembersRemoved {

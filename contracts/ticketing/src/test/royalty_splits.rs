@@ -176,9 +176,13 @@ fn royalty_splits_rejects_list_over_max() {
     }
 
     let result = client.try_set_royalty_splits(&organizer, &1, &Some(splits));
-    assert_eq!(result, Err(Ok(Error::InvalidRoyalty)),
-        "split list with {} recipients should be rejected (max {})", 
-        MAX_ROYALTY_SPLITS + 1, MAX_ROYALTY_SPLITS);
+    assert_eq!(
+        result,
+        Err(Ok(Error::InvalidRoyalty)),
+        "split list with {} recipients should be rejected (max {})",
+        MAX_ROYALTY_SPLITS + 1,
+        MAX_ROYALTY_SPLITS
+    );
 }
 
 /// Issue #459: `set_royalty_splits` must accept a list at exactly `MAX_ROYALTY_SPLITS`.
@@ -201,9 +205,11 @@ fn royalty_splits_accepts_list_at_max() {
     }
 
     let result = client.try_set_royalty_splits(&organizer, &1, &Some(splits));
-    assert!(result.is_ok(), 
-        "split list with exactly {} recipients should be accepted", 
-        MAX_ROYALTY_SPLITS);
+    assert!(
+        result.is_ok(),
+        "split list with exactly {} recipients should be accepted",
+        MAX_ROYALTY_SPLITS
+    );
 }
 
 /// Issue #459: `set_royalty_splits` must reject duplicate recipients.
@@ -224,8 +230,11 @@ fn royalty_splits_rejects_duplicate_recipients() {
             (venue.clone(), 200u32), // duplicate
         ]),
     );
-    assert_eq!(result, Err(Ok(Error::InvalidRoyalty)),
-        "duplicate recipients should be rejected");
+    assert_eq!(
+        result,
+        Err(Ok(Error::InvalidRoyalty)),
+        "duplicate recipients should be rejected"
+    );
 }
 
 /// Issue #459: `set_royalty_splits` must reject zero-bps entries.
@@ -245,8 +254,11 @@ fn royalty_splits_rejects_zero_bps_entries() {
             (promoter.clone(), 0u32), // zero bps
         ]),
     );
-    assert_eq!(result, Err(Ok(Error::InvalidRoyalty)),
-        "zero-bps entries should be rejected");
+    assert_eq!(
+        result,
+        Err(Ok(Error::InvalidRoyalty)),
+        "zero-bps entries should be rejected"
+    );
 }
 
 /// Issue #459: Verify that a resale with MAX_ROYALTY_SPLITS recipients stays
@@ -278,13 +290,13 @@ fn resale_with_max_splits_stays_within_budget() {
     let ticket_id = list_sample_ticket(&env, &client, &organizer, &seller);
 
     token_asset.mint(&buyer, &10_000i128);
-    
+
     // This should succeed without hitting budget limits
     client.buy_resale(&buyer, &ticket_id);
 
     // Verify ticket was transferred
     assert_eq!(client.get_ticket(&ticket_id).owner, buyer);
-    
+
     // Verify all recipients received their share
     let mut total_royalty_paid: i128 = 0;
     for recipient in recipients.iter() {
