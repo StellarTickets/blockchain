@@ -108,10 +108,7 @@ impl TicketingContract {
         Self::validate_label(seat, MAX_TICKET_LABEL_LEN)
     }
 
-    /// Step one of a payment token change: the admin proposes a new token,
-    /// which can only be applied after `PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS`.
-    /// A new proposal replaces any pending one. Proceeds already held in
-    /// escrow stay denominated in the old token, so release them first.
+    
     pub fn propose_payment_token(
         env: Env,
         admin: Address,
