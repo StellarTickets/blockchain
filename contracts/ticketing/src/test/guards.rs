@@ -154,6 +154,7 @@ fn terminal_tickets_reject_transitions_without_changing_state_or_balances() {
             client.try_revoke_with_refund(&organizer, &id, &true),
             Err(Ok(expected))
         );
+        
         assert_eq!(client.get_ticket(&id), before);
         assert_eq!(token.balance(&owner), 0);
         assert_eq!(token.balance(&organizer), 0);
