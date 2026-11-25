@@ -6,9 +6,13 @@ use soroban_sdk::{contracttype, Address, BytesN, String, Vec};
 
 /// Optional common category labels for indexers and client applications.
 ///
-/// `Event.category` intentionally remains a `String` so deployments can add
-/// industry-specific labels without a contract migration. Use `Other` when a
-/// value does not fit the common vocabulary.
+/// **Note (Issue #497):** This enum is provided as a reference vocabulary only.
+/// The contract does NOT validate `Event.category` against these values —
+/// `Event.category` is a free-form `String` to support industry-specific labels
+/// from the backend (e.g., the backend's `Industry` enum includes values like
+/// `CONCERTS`, `SPORTS`, etc.). Deployments can add new categories without
+/// requiring a contract migration. The constants `CATEGORY_*` in `constants.rs`
+/// export a subset of this vocabulary as lowercase strings for convenience.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Category {
@@ -49,7 +53,10 @@ pub enum TicketStatus {
 pub struct EventParams {
     /// Display name of the event.
     pub name: String,
-    /// Category such as "concert", "flight", "sports", "conference", etc.
+    /// Category label (free-form string). The backend typically sends values from
+    /// its `Industry` enum. The contract does not validate this field — it accepts
+    /// any string up to `MAX_CATEGORY_LEN` bytes. See [`Category`] and `CATEGORY_*`
+    /// constants for a reference vocabulary (Issue #497).
     pub category: String,
     /// Basis points cap on resale price relative to original sale price
     /// (e.g. 12000 = 120%). Anti-scalping enforcement.
@@ -82,11 +89,13 @@ pub struct Event {
     /// Display name of the event.
     pub name: String,
     /// Category such as "concert", "flight", "sports", "conference", etc.
-    /// Source of truth: the backend enforces the shared industry list in
-    /// [docs/INDUSTRIES.md](../../docs/INDUSTRIES.md) and the `Category` enum/
-    /// `CATEGORY_*` constants exported by this contract. The storage field is a
-    /// `String` for ABI compatibility, but callers must use the canonical
-    /// backend vocabulary rather than inventing new labels.
+    /// **Source of truth (Issue #497):** The contract accepts any string without
+    /// validation. The backend enforces the shared industry list from its
+    /// `Industry` enum (values like `CONCERTS`, `SPORTS`, etc.). The `Category`
+    /// enum and `CATEGORY_*` constants in this contract are reference vocabulary
+    /// only — they do NOT constrain what values the backend may send. This design
+    /// allows the backend to add new categories without requiring a contract
+    /// upgrade. See [`Category`] and `CATEGORY_*` constants for the reference list.
     pub category: String,
     /// Basis points cap on resale price relative to original sale price
     /// (e.g. 12000 = 120%). Anti-scalping enforcement.

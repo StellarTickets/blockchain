@@ -393,6 +393,11 @@ pub struct CheckInSignerRemoved {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin pauses the contract (issue #492).
+/// While paused, all state-changing operations fail with `ContractPaused`.
+pub struct ContractPaused {
+    #[topic]
+    pub admin: Address,
 /// Emitted when members are added to the presale allowlist (issue #495).
 /// Published after all members are successfully added to storage.
 pub struct AllowlistMembersAdded {
@@ -405,6 +410,11 @@ pub struct AllowlistMembersAdded {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Emitted when the admin unpauses the contract (issue #492).
+/// Re-enables all state-changing operations.
+pub struct ContractUnpaused {
+    #[topic]
+    pub admin: Address,
 /// Emitted when members are removed from the presale allowlist (issue #495).
 /// Published after all members are successfully removed from storage.
 pub struct AllowlistMembersRemoved {

@@ -52,7 +52,7 @@ single sum across events can mix tokens, so key amounts by token.
 | Metric | Source | Notes |
 |---|---|---|
 | `contract_calls_failed_total` | transaction results | by function and error code from [`ERRORS.md`](ERRORS.md) |
-| `contract_paused` | `is_paused` | `pause`/`unpause` publish no event, so poll it |
+| `contract_paused` | `ContractPaused` and `ContractUnpaused` events, or `is_paused` | gauge; `true` when paused, `false` when active |
 | `platform_fee_bps` | `PlatformFeeUpdated`, or `platform_fee_bps` | |
 | `instance_ttl_ledgers_left` | `getLedgerEntries` on the contract instance, `liveUntilLedgerSeq` minus the latest ledger | |
 | `ticket_ttl_ledgers_left_min` | the same, for persistent `Ticket` entries of upcoming events | |
@@ -68,7 +68,8 @@ day. Thresholds are starting points; tune them after the testnet soak.
 |---|---|---|---|
 | Unexpected admin change | any `PaymentTokenProposed`, `PaymentTokenChanged`, `PlatformFeeUpdated`, `OrganizerApproved`, `OrganizerRevoked` or `PurchaseThrottleUpdated` without a matching change ticket | page | confirm with the admin signers; a proposal can be overridden with a new one while the time lock runs |
 | Pending payment-token change | `PaymentTokenProposed` seen | ticket | confirm it is planned and release escrow in the old token before `apply_payment_token` |
-| Contract paused | `contract_paused` becomes `true` | page | confirm the pause was intended; all state-changing calls fail with `ContractPaused` |
+| Contract paused | `ContractPaused` event or `contract_paused` becomes `true` | page | confirm the pause was intended; all state-changing calls fail with `ContractPaused` |
+| Contract unpaused | `ContractUnpaused` event | ticket | log and confirm the unpause was intended |
 | Authorization errors | `NotAdmin` or `NotOrganizer` failures above a low baseline | ticket, page on a spike | look for a misconfigured backend key or probing |
 | Arithmetic or lifecycle errors | any `MathOverflow` or `InvalidTicketLifecycle` | page | these indicate a contract bug; collect the transaction and see [`SECURITY.md`](../SECURITY.md) |
 | Payment failures | primary or resale purchases failing in the token contract | page | check the token contract and the buyer's trustline/balance; see [`NATIVE_XLM.md`](NATIVE_XLM.md) |
