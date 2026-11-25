@@ -90,3 +90,17 @@ fn window_must_end_after_the_event_starts() {
         Err(Ok(Error::InvalidCheckInWindow))
     );
 }
+
+#[test]
+fn check_in_batch_accepts_the_exact_ends_at_boundary() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    make_event(&env, &client, &organizer, 1);
+    client.set_event_check_in_window(&organizer, &1, &None, &Some(STARTS_AT + 500));
+    let ticket_id = issued_ticket(&env, &client, &organizer);
+    let ticket_ids = soroban_sdk::vec![&env, ticket_id];
+
+    env.ledger().set_timestamp(STARTS_AT + 500);
+    client.check_in_batch(&organizer, &ticket_ids);
+
+    assert_eq!(client.get_ticket(&ticket_id).status, TicketStatus::Used);
+}
