@@ -1418,6 +1418,7 @@ impl TicketingContract {
         Self::require_not_terminal(&ticket)?;
 
         let event = Self::get_event_inner(&env, ticket.event_id)?;
+        Self::ensure_not_cancelled(&event)?;
         if Self::transfer_frozen(&env, &event) {
             return Err(Error::TransfersFrozen);
         }
@@ -3006,6 +3007,7 @@ impl TicketingContract {
             return Err(Error::AuctionNotEnded);
         }
         let event = Self::get_event_inner(&env, ticket.event_id)?;
+        Self::ensure_not_cancelled(&event)?;
         let token_address = Self::payment_token_for_event(&env, &event)?;
         let bid = auction.highest_bid;
         let listed = ticket.status == TicketStatus::Resale;
@@ -3421,6 +3423,7 @@ impl TicketingContract {
     ) -> Result<(), Error> {
         let mut ticket = Self::get_ticket_inner(env, ticket_id)?;
         let event = Self::require_check_in_authority(env, ticket.event_id, signer)?;
+        Self::ensure_not_cancelled(&event)?;
         Self::ensure_check_in_window(env, &event)?;
         Self::ensure_not_expired(env, &event)?;
         Self::ensure_ticket_validity(env, ticket_id)?;
@@ -3822,6 +3825,7 @@ impl TicketingContract {
         }
         Self::require_not_terminal(&ticket)?;
         let event = Self::get_event_inner(env, ticket.event_id)?;
+        Self::ensure_not_cancelled(&event)?;
         Self::ensure_transferable(&event)?;
         Self::ensure_transfer_allowed(env, &ticket, &event)?;
         if Self::transfer_frozen(env, &event) {
