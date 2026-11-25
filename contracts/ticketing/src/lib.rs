@@ -44,15 +44,13 @@ pub struct TicketingContract;
 
 #[contractimpl]
 impl TicketingContract {
-    /// One-time setup. `payment_token` is the Stellar Asset Contract (or any
-    /// SEP-41 token) used for on-chain primary sales and resale settlement.
+    
     pub fn initialize(env: Env, admin: Address, payment_token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
         admin.require_auth();
-        // The probe validates that `payment_token` is a real token contract
-        // and captures its decimals for client display (issue #233).
+       
         let decimals = Self::ensure_token_contract(&env, &payment_token)?;
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
