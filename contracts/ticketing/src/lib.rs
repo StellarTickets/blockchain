@@ -1,4 +1,4 @@
-//! StellarTickets ticketing smart contract for Soroban on Stellar.
+
 #![no_std]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
@@ -38,20 +38,7 @@ use soroban_sdk::{
     contract, contractimpl, token, Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
 };
 
-/// # Authorization ordering (issue #206)
-///
-/// Every state-changing entry point below calls `require_auth()` as its
-/// very first statement, before any storage lookup or business-rule check
-/// (existence of a ticket/event, ownership, status, etc.). This ordering is
-/// deliberate: checking auth first means a caller who has not authorized
-/// the call learns nothing about contract state from the error they get
-/// back — not whether a ticket exists, who owns it, or what state it's in.
-/// Validating business rules before auth would leak that information to an
-/// unauthenticated caller through which error is returned. Keep this order
-/// when adding new entry points. See
-/// `require_auth_runs_before_business_validation` in `test/auth.rs` for the
-/// regression test.
-/// The main ticketing contract structure.
+
 #[contract]
 pub struct TicketingContract;
 
