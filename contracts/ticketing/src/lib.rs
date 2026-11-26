@@ -96,6 +96,7 @@ impl TicketingContract {
         Ok(())
     }
 
+   
     
     fn validate_event_labels(name: &String, category: &String) -> Result<(), Error> {
         Self::validate_label(name, MAX_NAME_LEN)?;
