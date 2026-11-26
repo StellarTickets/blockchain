@@ -1,10 +1,10 @@
-//! Contract events emitted by the ticketing contract.
+
 
 use soroban_sdk::{contractevent, Address, BytesN, String, Symbol, Vec};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted when a ticket is minted.
+
 pub struct TicketIssued {
     #[topic]
     pub ticket_id: u64,
@@ -15,7 +15,7 @@ pub struct TicketIssued {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-/// Emitted once when the contract is initialized.
+
 pub struct ContractInitialized {
     #[topic]
     pub admin: Address,
