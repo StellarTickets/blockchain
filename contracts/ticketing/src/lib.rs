@@ -97,6 +97,7 @@ impl TicketingContract {
     }
 
    
+    
     fn validate_event_labels(name: &String, category: &String) -> Result<(), Error> {
         Self::validate_label(name, MAX_NAME_LEN)?;
         Self::validate_label(category, MAX_CATEGORY_LEN)
@@ -119,9 +120,7 @@ impl TicketingContract {
         Self::require_admin(&env, &admin)?;
         
         Self::ensure_token_contract(&env, &new_token)?;
-        // Reject a no-op proposal: proposing the token that is already active
-        // would start the timelock and emit an event for a change that does
-        // nothing (issue #365).
+        
         if let Ok(current) = Self::payment_token(&env) {
             if new_token == current {
                 return Err(Error::SamePaymentToken);
@@ -198,8 +197,7 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Approves an organizer so they may create events. Idempotent: repeated
-    /// approvals leave the allowlist unchanged and just re-emit the event.
+    
     pub fn approve_organizer(env: Env, admin: Address, organizer: Address) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         Self::require_admin(&env, &admin)?;
