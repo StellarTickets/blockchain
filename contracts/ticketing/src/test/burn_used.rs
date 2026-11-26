@@ -187,3 +187,51 @@ fn burned_ticket_cannot_be_transferred() {
     let result = client.try_transfer_ticket(&owner, &ticket_id, &recipient);
     assert_eq!(result, Err(Ok(Error::TicketNotFound)));
 }
+
+#[test]
+fn burn_measures_retention_from_ends_at_for_multi_day_event() {
+    let (env, client, _token, _token_asset, _admin, organizer) = setup();
+    // Create a 30-day event (longer than the 30-day retention period).
+    let starts_at = STARTS_AT;
+    let ends_at = starts_at + 30 * 24 * 3600; // 30 days later
+    let params = EventParams {
+        name: String::from_str(&env, "Multi-Day Festival"),
+        category: String::from_str(&env, "festival"),
+        max_resale_multiplier_bps: 12_000u32,
+        royalty_bps: 1_000u32,
+        starts_at,
+        transfer_freeze_seconds: 3600u64,
+        resale_cutoff_seconds: 3600u64,
+        max_per_wallet: None,
+        refund_window_seconds: None,
+        presale_starts_at: None,
+        presale_ends_at: None,
+    };
+    client.create_event_with_options(&organizer, &1, &params, &None, &None);
+
+    // Now we need to set ends_at on the event
+    client.set_event_check_in_window(&organizer, &1, &None, &Some(ends_at));
+
+    let owner = Address::generate(&env);
+    let ticket_id = issue_sample_ticket(&env, &client, &organizer, 1, &owner, 1_000);
+    client.check_in(&organizer, &ticket_id);
+
+    // Retention should start from ends_at, not starts_at.
+    // Try to burn immediately after starts_at + retention (should fail).
+    env.ledger()
+        .set_timestamp(starts_at + USED_TICKET_RETENTION_SECONDS);
+    assert_eq!(
+        client.try_burn_used_ticket(&organizer, &ticket_id),
+        Err(Ok(Error::RetentionPeriodNotElapsed))
+    );
+
+    // Now set time to ends_at + retention (should succeed).
+    env.ledger()
+        .set_timestamp(ends_at + USED_TICKET_RETENTION_SECONDS);
+    client.burn_used_ticket(&organizer, &ticket_id);
+
+    assert_eq!(
+        client.try_get_ticket(&ticket_id),
+        Err(Ok(Error::TicketNotFound))
+    );
+}

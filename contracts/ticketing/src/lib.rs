@@ -1,4 +1,3 @@
-
 #![no_std]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
@@ -13,21 +12,21 @@ pub use constants::{
     CATEGORY_OTHER, CATEGORY_SPORTS, MAX_BATCH_SIZE, MAX_CATEGORY_LEN, MAX_EVENT_METADATA_ENTRIES,
     MAX_EVENT_METADATA_KEY_LEN, MAX_EVENT_METADATA_VALUE_LEN, MAX_METADATA_URI_LEN, MAX_NAME_LEN,
     MAX_OWNER_HISTORY, MAX_PAGE_SIZE, MAX_PERK_LEN, MAX_ROYALTY_SPLITS, MAX_TICKET_LABEL_LEN,
-    MAX_TIER_PERKS, MAX_TIER_ZONES, PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS, USED_TICKET_RETENTION_SECONDS,
+    MAX_TIER_PERKS, MAX_TIER_ZONES, PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS,
+    USED_TICKET_RETENTION_SECONDS,
 };
 use constants::{LEDGER_BUMP, LEDGER_THRESHOLD, MAX_COLLECTION_SYMBOL_LEN};
 pub use error::Error;
 pub use events::{
-    AdminProposed, AdminTransferred, AuctionSettled, AuctionStarted, BidPlaced, CheckInSignerAdded,
-    CheckInSignerRemoved, ContractInitialized, ContractPaused, ContractUnpaused, ContractUpgraded, 
-    EventCancelled, EventConfigChanged, EventCreated, GiftClaimCreated, GiftClaimed, ListingCancelled,
+    AdminProposed, AdminTransferred, AllowlistMembersAdded, AllowlistMembersRemoved,
+    AuctionSettled, AuctionStarted, BidPlaced, CheckInSignerAdded, CheckInSignerRemoved,
+    ContractInitialized, ContractPaused, ContractUnpaused, ContractUpgraded, EventCancelled,
+    EventConfigChanged, EventCreated, GiftClaimCreated, GiftClaimed, ListingCancelled,
     ListingDelisted, OfferAccepted, OfferCancelled, OfferMade, OrganizerApproved, OrganizerRevoked,
     PaymentTokenChanged, PaymentTokenProposed, PlatformFeeUpdated, PrimarySale,
-    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketRefunded,
-    TicketResold, TicketTransferred, TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
-    EventConfigChanged, ListingDelisted, GiftClaimed, GiftClaimCreated,
-    AllowlistMembersAdded, AllowlistMembersRemoved, TicketUsesChanged, TicketValidityChanged,
-    TicketPassedOut,
+    PurchaseThrottleUpdated, TicketCheckedIn, TicketIssued, TicketListed, TicketPassedOut,
+    TicketRefunded, TicketResold, TicketTransferred, TicketUsesChanged, TicketValidityChanged,
+    TierCapacitySet, TierPerksSet, TierPriceSet, TierZonesSet,
 };
 pub use types::{
     Auction, Category, DataKey, Event, EventParams, GiftClaim, Offer, PendingPaymentToken,
@@ -38,19 +37,17 @@ use soroban_sdk::{
     contract, contractimpl, token, Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
 };
 
-
 #[contract]
 pub struct TicketingContract;
 
 #[contractimpl]
 impl TicketingContract {
-    
     pub fn initialize(env: Env, admin: Address, payment_token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
         admin.require_auth();
-       
+
         let decimals = Self::ensure_token_contract(&env, &payment_token)?;
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
@@ -1309,7 +1306,7 @@ impl TicketingContract {
             Self::ensure_transfer_allowed(&env, &ticket, &event)?;
             Self::move_owner_balance(&env, ticket_id, &ticket.owner, &to);
             ticket.owner = to.clone();
-            ticket.transfers += 1;
+            ticket.transfers = ticket.transfers.saturating_add(1);
             ticket.status = TicketStatus::Valid;
             ticket.resale_price = 0;
             Self::remove_gift_claim(&env, ticket_id);
@@ -1418,7 +1415,7 @@ impl TicketingContract {
 
         Self::move_owner_balance(&env, ticket_id, &ticket.owner, &recipient);
         ticket.owner = recipient.clone();
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         env.storage().persistent().remove(&key);
@@ -2182,7 +2179,8 @@ impl TicketingContract {
             return Err(Error::TicketNotUsed);
         }
         let burnable_from = event
-            .starts_at
+            .ends_at
+            .unwrap_or(event.starts_at)
             .saturating_add(USED_TICKET_RETENTION_SECONDS);
         if env.ledger().timestamp() < burnable_from {
             return Err(Error::RetentionPeriodNotElapsed);
@@ -2445,7 +2443,7 @@ impl TicketingContract {
         let seller = ticket.owner.clone();
         Self::move_owner_balance(&env, ticket_id, &seller, &buyer);
         ticket.owner = buyer.clone();
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
@@ -3016,7 +3014,7 @@ impl TicketingContract {
                     Self::resale_split(&event, bid, fee_bps)?;
                 Self::move_owner_balance(&env, ticket_id, &seller, winner);
                 ticket.owner = winner.clone();
-                ticket.transfers += 1;
+                ticket.transfers = ticket.transfers.saturating_add(1);
                 ticket.status = TicketStatus::Valid;
                 ticket.resale_price = 0;
                 Self::remove_gift_claim(&env, ticket_id);
@@ -3206,7 +3204,7 @@ impl TicketingContract {
         Self::adjust_resale_funds(&env, &offer.token, -offer.amount);
         Self::move_owner_balance(&env, ticket_id, &owner, &buyer);
         ticket.owner = buyer.clone();
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(&env, ticket_id);
@@ -3753,6 +3751,8 @@ impl TicketingContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
     /// Reads a tier's default metadata URI for a primary sale (issue #507).
     /// Refreshes the entry's TTL when it is set, so a tier that keeps selling
     /// does not lose its URI to archival.
@@ -3825,7 +3825,7 @@ impl TicketingContract {
         Self::ensure_no_auction(env, ticket_id)?;
         Self::move_owner_balance(env, ticket_id, &ticket.owner, to);
         ticket.owner = to.clone();
-        ticket.transfers += 1;
+        ticket.transfers = ticket.transfers.saturating_add(1);
         ticket.status = TicketStatus::Valid;
         ticket.resale_price = 0;
         Self::remove_gift_claim(env, ticket_id);

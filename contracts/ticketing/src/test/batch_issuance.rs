@@ -160,7 +160,6 @@ fn issue_tickets_is_organizer_only() {
     );
 }
 
-<<<<<<< HEAD
 // Issue #508: each batch recipient can carry its own metadata URI.
 
 fn recipient_with_uri(env: &Env, to: &Address, uri: Option<&str>) -> TicketRecipient {
