@@ -3,12 +3,10 @@
 use super::*;
 use soroban_sdk::BytesN;
 
-/// Ends the auction before the resale cutoff of `make_event` (starts_at 10_000
-/// minus resale_cutoff_seconds 200).
+
 const AUCTION_END: u64 = 5_000;
 
-/// Issues a ticket to `seller` and starts a 500-reserve auction that ends at
-/// `AUCTION_END`. Returns the ticket id.
+
 fn auctioned_ticket(
     env: &Env,
     client: &TicketingContractClient,
