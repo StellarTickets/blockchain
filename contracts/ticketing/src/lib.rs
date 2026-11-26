@@ -96,7 +96,7 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Event metadata validation: non-empty, length-bounded name and category.
+    
     fn validate_event_labels(name: &String, category: &String) -> Result<(), Error> {
         Self::validate_label(name, MAX_NAME_LEN)?;
         Self::validate_label(category, MAX_CATEGORY_LEN)
