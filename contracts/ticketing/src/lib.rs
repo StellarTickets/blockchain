@@ -102,16 +102,13 @@ impl TicketingContract {
         Self::validate_label(category, MAX_CATEGORY_LEN)
     }
 
-    /// Ticket label validation: non-empty, length-bounded tier and seat.
+    
     fn validate_ticket_labels(tier: &String, seat: &String) -> Result<(), Error> {
         Self::validate_label(tier, MAX_TICKET_LABEL_LEN)?;
         Self::validate_label(seat, MAX_TICKET_LABEL_LEN)
     }
 
-    /// Step one of a payment token change: the admin proposes a new token,
-    /// which can only be applied after `PAYMENT_TOKEN_CHANGE_DELAY_LEDGERS`.
-    /// A new proposal replaces any pending one. Proceeds already held in
-    /// escrow stay denominated in the old token, so release them first.
+    
     pub fn propose_payment_token(
         env: Env,
         admin: Address,
@@ -120,14 +117,9 @@ impl TicketingContract {
         Self::extend_instance_ttl(&env);
         Self::require_not_paused(&env)?;
         Self::require_admin(&env, &admin)?;
-        // The probe validates that the proposed token is a real token
-        // contract. Its decimals are captured when the change is APPLIED so
-        // clients always see decimals matching the active payment token
-        // (issue #233).
+        
         Self::ensure_token_contract(&env, &new_token)?;
-        // Reject a no-op proposal: proposing the token that is already active
-        // would start the timelock and emit an event for a change that does
-        // nothing (issue #365).
+        
         if let Ok(current) = Self::payment_token(&env) {
             if new_token == current {
                 return Err(Error::SamePaymentToken);
@@ -204,8 +196,7 @@ impl TicketingContract {
         Ok(())
     }
 
-    /// Approves an organizer so they may create events. Idempotent: repeated
-    /// approvals leave the allowlist unchanged and just re-emit the event.
+    
     pub fn approve_organizer(env: Env, admin: Address, organizer: Address) -> Result<(), Error> {
         Self::extend_instance_ttl(&env);
         Self::require_admin(&env, &admin)?;
